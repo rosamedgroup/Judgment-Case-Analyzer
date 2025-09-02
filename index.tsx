@@ -3,9 +3,72 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import { GoogleGenAI, Type } from '@google/genai';
-import { useState, FormEvent, ChangeEvent } from 'react';
+import { useState, FormEvent, ChangeEvent, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
+
+const DB_NAME = 'JudgmentCaseDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'cases';
+
+interface CaseRecord {
+  id?: number;
+  originalText: string;
+  analysis: any;
+  timestamp: number;
+}
+
+const openDB = (): Promise<IDBDatabase> => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+};
+
+const addCaseToDB = (record: CaseRecord): Promise<IDBDatabase> => {
+  return openDB().then(db => {
+    return new Promise<IDBDatabase>((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const addRequest = store.add(record);
+      addRequest.onsuccess = () => resolve(db);
+      addRequest.onerror = () => reject(addRequest.error);
+    });
+  });
+};
+
+
+const getAllCasesFromDB = (): Promise<CaseRecord[]> => {
+  return openDB().then(db => {
+    return new Promise<CaseRecord[]>((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const getAllRequest = store.getAll();
+      getAllRequest.onsuccess = () => resolve(getAllRequest.result.sort((a,b) => b.timestamp - a.timestamp));
+      getAllRequest.onerror = () => reject(getAllRequest.error);
+    });
+  });
+};
+
+const clearAllCasesFromDB = (): Promise<void> => {
+  return openDB().then(db => {
+    return new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const clearRequest = store.clear();
+      clearRequest.onsuccess = () => resolve();
+      clearRequest.onerror = () => reject(clearRequest.error);
+    });
+  });
+};
+
 
 const schema = {
   type: Type.OBJECT,
@@ -52,11 +115,24 @@ const schema = {
 function App() {
   const [caseText, setCaseText] = useState('');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [analysisResults, setAnalysisResults] = useState<any[]>([]);
+  const [analysisResults, setAnalysisResults] = useState<CaseRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [progressText, setProgressText] = useState('');
 
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const history = await getAllCasesFromDB();
+        setAnalysisResults(history);
+      } catch (err) {
+        console.error("Failed to load history from DB:", err);
+        setError("Could not load analysis history.");
+      }
+    };
+    loadHistory();
+  }, []);
+  
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -78,23 +154,32 @@ function App() {
       return;
     }
     setLoading(true);
-    setAnalysisResults([]);
     setError('');
     setProgressText('');
 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-    const analyzeCase = async (text: string) => {
-      const prompt = `Analyze the following legal case text from Saudi Arabia and extract the specified information in JSON format. If a field is not present in the text, use null for its value. Here is the case text: \n\n${text}`;
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: schema,
-        },
-      });
-      return JSON.parse(response.text);
+    const analyzeAndStoreCase = async (text: string, originalIndex: number, totalCases: number): Promise<CaseRecord | { error: string, originalText: string }> => {
+      setProgressText(`Analyzing case ${originalIndex + 1} of ${totalCases}...`);
+      try {
+        const prompt = `Analyze the following legal case text from Saudi Arabia and extract the specified information in JSON format. If a field is not present in the text, use null for its value. Here is the case text: \n\n${text}`;
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: schema,
+          },
+        });
+        const analysis = JSON.parse(response.text);
+        const record: CaseRecord = { originalText: text, analysis, timestamp: Date.now() };
+        await addCaseToDB(record);
+        // We'll refetch to get the ID and ensure order.
+        return record; 
+      } catch (err) {
+        console.error(`Failed to analyze case ${originalIndex + 1}:`, err);
+        return { error: `Failed to analyze case ${originalIndex + 1}.`, originalText: text };
+      }
     };
 
     if (uploadedFile) {
@@ -107,16 +192,15 @@ function App() {
             throw new Error('JSON file must contain an array of strings.');
           }
 
+          const newResults: CaseRecord[] = [];
           for (let i = 0; i < cases.length; i++) {
-            setProgressText(`Analyzing case ${i + 1} of ${cases.length}...`);
-            try {
-              const result = await analyzeCase(cases[i]);
-              setAnalysisResults(prev => [...prev, result]);
-            } catch (err) {
-              console.error(`Failed to analyze case ${i + 1}:`, err);
-              setAnalysisResults(prev => [...prev, { error: `Failed to analyze case ${i + 1}.`, originalText: cases[i] }]);
-            }
+            const result = await analyzeAndStoreCase(cases[i], i, cases.length);
+            // This is a temporary state for UI, will be replaced by full history fetch
+            setAnalysisResults(prev => 'error' in result ? prev : [result, ...prev]);
           }
+          const fullHistory = await getAllCasesFromDB();
+          setAnalysisResults(fullHistory);
+
           setProgressText('Analysis complete.');
         } catch (err) {
           console.error(err);
@@ -124,6 +208,9 @@ function App() {
           setProgressText('');
         } finally {
           setLoading(false);
+          setUploadedFile(null);
+          const fileInput = document.getElementById('file-upload') as HTMLInputElement;
+          if (fileInput) fileInput.value = '';
         }
       };
       reader.onerror = () => {
@@ -133,9 +220,10 @@ function App() {
       reader.readAsText(uploadedFile);
     } else {
       try {
-        setProgressText('Analyzing case...');
-        const result = await analyzeCase(caseText);
-        setAnalysisResults([result]);
+        await analyzeAndStoreCase(caseText, 0, 1);
+        const fullHistory = await getAllCasesFromDB();
+        setAnalysisResults(fullHistory);
+        setCaseText('');
         setProgressText('Analysis complete.');
       } catch (err) {
         console.error(err);
@@ -143,6 +231,18 @@ function App() {
         setProgressText('');
       } finally {
         setLoading(false);
+      }
+    }
+  };
+
+  const handleClearHistory = async () => {
+    if (window.confirm('Are you sure you want to clear all analysis history? This action cannot be undone.')) {
+      try {
+        await clearAllCasesFromDB();
+        setAnalysisResults([]);
+      } catch (err) {
+        console.error('Failed to clear history:', err);
+        setError('Could not clear history.');
       }
     }
   };
@@ -163,9 +263,11 @@ function App() {
               value={caseText}
               onChange={(e) => {
                 setCaseText(e.target.value);
-                setUploadedFile(null);
-                const fileInput = document.getElementById('file-upload') as HTMLInputElement;
-                if (fileInput) fileInput.value = '';
+                if (uploadedFile) {
+                  setUploadedFile(null);
+                  const fileInput = document.getElementById('file-upload') as HTMLInputElement;
+                  if (fileInput) fileInput.value = '';
+                }
               }}
               placeholder="Paste the full text of the judgment case here..."
               rows={15}
@@ -190,20 +292,23 @@ function App() {
           {loading && <div className="loader"></div>}
           {loading && progressText && <div className="progress-text">{progressText}</div>}
           {error && <div className="error-message">{error}</div>}
-          {analysisResults.length > 0 && <ResultsDisplay results={analysisResults} />}
-          {!loading && !error && analysisResults.length === 0 && <div className="placeholder">Results will appear here.</div>}
+          {analysisResults.length > 0 && <ResultsDisplay results={analysisResults} onClear={handleClearHistory} />}
+          {!loading && !error && analysisResults.length === 0 && <div className="placeholder">Your analysis history will appear here.</div>}
         </div>
       </div>
     </main>
   );
 }
 
-const ResultsDisplay = ({ results }: { results: any[] }) => {
+const ResultsDisplay = ({ results, onClear }: { results: CaseRecord[], onClear: () => void }) => {
   return (
     <div className="results-container">
-      <h2>Analysis Results ({results.length})</h2>
-      {results.map((result, index) => (
-        <ResultCard key={index} data={result} />
+      <div className="results-header">
+        <h2>Analysis History ({results.length})</h2>
+        <button className="clear-history-btn" onClick={onClear}>Clear History</button>
+      </div>
+      {results.map((result) => (
+        <ResultCard key={result.id} data={result.analysis} />
       ))}
     </div>
   );
