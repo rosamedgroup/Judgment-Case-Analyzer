@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import { GoogleGenAI, Type } from '@google/genai';
-import { useState, FormEvent, ChangeEvent, useEffect } from 'react';
+import { useState, FormEvent, ChangeEvent, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 
@@ -34,14 +34,14 @@ const openDB = (): Promise<IDBDatabase> => {
   });
 };
 
-const addCaseToDB = (record: CaseRecord): Promise<number> => {
+const putCaseInDB = (record: CaseRecord): Promise<number> => {
   return openDB().then(db => {
     return new Promise<number>((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
-      const addRequest = store.add(record);
-      addRequest.onsuccess = () => resolve(addRequest.result as number);
-      addRequest.onerror = () => reject(addRequest.error);
+      const request = store.put(record);
+      request.onsuccess = () => resolve(request.result as number);
+      request.onerror = () => reject(request.error);
     });
   });
 };
@@ -120,6 +120,7 @@ function App() {
   const [analysisResults, setAnalysisResults] = useState<CaseRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     const loadHistory = async () => {
@@ -147,6 +148,13 @@ function App() {
       }
     }
   };
+
+  const resetUploadState = () => {
+    setLoading(false);
+    setUploadedFile(null);
+    const fileInput = document.getElementById('file-upload') as HTMLInputElement;
+    if (fileInput) fileInput.value = '';
+  }
   
   const handleAnalyze = async (e: FormEvent) => {
     e.preventDefault();
@@ -172,7 +180,7 @@ function App() {
         });
         const analysis = JSON.parse(response.text);
         const record: CaseRecord = { originalText: text, analysis, timestamp: Date.now() };
-        await addCaseToDB(record);
+        await putCaseInDB(record);
         const fullHistory = await getAllCasesFromDB();
         setAnalysisResults(fullHistory);
         setCaseText('');
@@ -189,10 +197,38 @@ function App() {
       reader.onload = async (event) => {
         try {
           const fileContent = event.target?.result as string;
-          const cases = JSON.parse(fileContent);
-          if (!Array.isArray(cases) || !cases.every(c => typeof c === 'string')) {
-            throw new Error('JSON file must contain an array of strings.');
+           if (!fileContent) {
+            setError('The uploaded file is empty.');
+            resetUploadState();
+            return;
           }
+          let cases;
+          try {
+            cases = JSON.parse(fileContent);
+          } catch (e) {
+            setError('Invalid JSON format. Please check the file content.');
+            resetUploadState();
+            return;
+          }
+
+          if (!Array.isArray(cases)) {
+            setError('JSON file must be an array of strings.');
+            resetUploadState();
+            return;
+          }
+
+          if (cases.length === 0) {
+            setError('The JSON array contains no cases to analyze.');
+            resetUploadState();
+            return;
+          }
+
+          if (!cases.every(c => typeof c === 'string' && c.trim() !== '')) {
+            setError('All items in the JSON array must be non-empty strings.');
+            resetUploadState();
+            return;
+          }
+
 
           const placeholderRecords: CaseRecord[] = cases.map((text: string, index: number) => ({
             originalText: text,
@@ -219,7 +255,7 @@ function App() {
                 analysis,
                 timestamp: Date.now()
               };
-              const newId = await addCaseToDB(newRecord);
+              const newId = await putCaseInDB(newRecord);
 
               setAnalysisResults(prev =>
                 prev.map(r => r.timestamp === placeholder.timestamp ? { ...newRecord, id: newId, loading: false } : r)
@@ -238,12 +274,9 @@ function App() {
           }
         } catch (err) {
           console.error(err);
-          setError('Failed to read or parse the JSON file. Please ensure it is a valid JSON array of strings.');
+           setError(err instanceof Error ? err.message : 'An unexpected error occurred during file processing.');
         } finally {
-          setLoading(false);
-          setUploadedFile(null);
-          const fileInput = document.getElementById('file-upload') as HTMLInputElement;
-          if (fileInput) fileInput.value = '';
+          resetUploadState();
         }
       };
       reader.onerror = () => {
@@ -267,6 +300,20 @@ function App() {
       }
     }
   };
+  
+  const filteredResults = useMemo(() => {
+    if (!searchTerm.trim()) {
+      return analysisResults;
+    }
+    const lowerCaseSearchTerm = searchTerm.toLowerCase();
+    return analysisResults.filter(record => {
+      const textMatch = record.originalText.toLowerCase().includes(lowerCaseSearchTerm);
+      const analysisMatch = record.analysis ?
+        JSON.stringify(record.analysis).toLowerCase().includes(lowerCaseSearchTerm) :
+        false;
+      return textMatch || analysisMatch;
+    });
+  }, [analysisResults, searchTerm]);
 
   return (
     <main className="container">
@@ -312,39 +359,64 @@ function App() {
         <div className="output-section">
           {loading && analysisResults.every(r => r.loading) && <div className="loader"></div>}
           {error && <div className="error-message">{error}</div>}
-          {analysisResults.length > 0 && <ResultsDisplay results={analysisResults} onClear={handleClearHistory} />}
-          {!loading && !error && analysisResults.length === 0 && <div className="placeholder">Your analysis history will appear here.</div>}
+          {(analysisResults.length > 0 || searchTerm) && (
+            <ResultsDisplay 
+              results={filteredResults} 
+              onClear={handleClearHistory}
+              searchTerm={searchTerm}
+              setSearchTerm={setSearchTerm}
+            />
+          )}
+          {!loading && !error && analysisResults.length === 0 && !searchTerm && <div className="placeholder">Your analysis history will appear here.</div>}
         </div>
       </div>
     </main>
   );
 }
 
-const ResultsDisplay = ({ results, onClear }: { results: CaseRecord[], onClear: () => void }) => {
+const ResultsDisplay = ({ results, onClear, searchTerm, setSearchTerm }: { results: CaseRecord[], onClear: () => void, searchTerm: string, setSearchTerm: (term: string) => void }) => {
   return (
     <div className="results-container">
       <div className="results-header">
-        <h2>Analysis History ({results.filter(r => !r.loading).length})</h2>
-        <button className="clear-history-btn" onClick={onClear}>Clear History</button>
+        <h2>Analysis History ({results.filter(r => !r.loading && !r.error).length})</h2>
+        <div className="filter-controls">
+          <input
+            type="search"
+            placeholder="Filter results..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            aria-label="Filter analysis history"
+          />
+          <button className="clear-history-btn" onClick={onClear}>Clear History</button>
+        </div>
       </div>
       {results.map((result) => (
         <ResultCard key={result.id || result.timestamp} record={result} />
       ))}
+       {results.length === 0 && searchTerm && (
+        <div className="placeholder">No results match your filter.</div>
+      )}
     </div>
   );
 };
-
 
 const ResultCard = ({ record }: { record: CaseRecord }) => {
   const { loading, error, analysis, originalText } = record;
 
   if (loading) {
     return (
-      <div className="result-card loading-card">
-        <div className="card-loader"></div>
-        <p>Analyzing...</p>
-      </div>
-    );
+        <div className="result-card">
+            <details open>
+                <summary className="summary-loading">
+                    <span>Analyzing...</span>
+                    <div className="small-loader"></div>
+                </summary>
+                <div className="result-section">
+                  <p>Processing case text. This may take a moment.</p>
+                </div>
+            </details>
+        </div>
+    )
   }
 
   if (error) {
@@ -360,7 +432,7 @@ const ResultCard = ({ record }: { record: CaseRecord }) => {
     );
   }
   
-  if (!analysis) return null; // Should not happen if not loading or error
+  if (!analysis) return null;
 
   const renderField = (label: string, value: any) => {
     if (value === null || value === undefined || (Array.isArray(value) && value.length === 0)) {
