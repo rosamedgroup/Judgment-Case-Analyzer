@@ -14,8 +14,10 @@ const STORE_NAME = 'cases';
 interface CaseRecord {
   id?: number;
   originalText: string;
-  analysis: any;
+  analysis?: any;
   timestamp: number;
+  loading?: boolean;
+  error?: string;
 }
 
 const openDB = (): Promise<IDBDatabase> => {
@@ -32,13 +34,13 @@ const openDB = (): Promise<IDBDatabase> => {
   });
 };
 
-const addCaseToDB = (record: CaseRecord): Promise<IDBDatabase> => {
+const addCaseToDB = (record: CaseRecord): Promise<number> => {
   return openDB().then(db => {
-    return new Promise<IDBDatabase>((resolve, reject) => {
+    return new Promise<number>((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
       const addRequest = store.add(record);
-      addRequest.onsuccess = () => resolve(db);
+      addRequest.onsuccess = () => resolve(addRequest.result as number);
       addRequest.onerror = () => reject(addRequest.error);
     });
   });
@@ -118,7 +120,6 @@ function App() {
   const [analysisResults, setAnalysisResults] = useState<CaseRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [progressText, setProgressText] = useState('');
 
   useEffect(() => {
     const loadHistory = async () => {
@@ -155,12 +156,10 @@ function App() {
     }
     setLoading(true);
     setError('');
-    setProgressText('');
 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-    const analyzeAndStoreCase = async (text: string, originalIndex: number, totalCases: number): Promise<CaseRecord | { error: string, originalText: string }> => {
-      setProgressText(`Analyzing case ${originalIndex + 1} of ${totalCases}...`);
+    const analyzeSingleCase = async (text: string) => {
       try {
         const prompt = `Analyze the following legal case text from Saudi Arabia and extract the specified information in JSON format. If a field is not present in the text, use null for its value. Here is the case text: \n\n${text}`;
         const response = await ai.models.generateContent({
@@ -174,11 +173,14 @@ function App() {
         const analysis = JSON.parse(response.text);
         const record: CaseRecord = { originalText: text, analysis, timestamp: Date.now() };
         await addCaseToDB(record);
-        // We'll refetch to get the ID and ensure order.
-        return record; 
+        const fullHistory = await getAllCasesFromDB();
+        setAnalysisResults(fullHistory);
+        setCaseText('');
       } catch (err) {
-        console.error(`Failed to analyze case ${originalIndex + 1}:`, err);
-        return { error: `Failed to analyze case ${originalIndex + 1}.`, originalText: text };
+        console.error(err);
+        setError('Failed to analyze the case. Please check the console for more details.');
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -192,20 +194,51 @@ function App() {
             throw new Error('JSON file must contain an array of strings.');
           }
 
-          const newResults: CaseRecord[] = [];
-          for (let i = 0; i < cases.length; i++) {
-            const result = await analyzeAndStoreCase(cases[i], i, cases.length);
-            // This is a temporary state for UI, will be replaced by full history fetch
-            setAnalysisResults(prev => 'error' in result ? prev : [result, ...prev]);
-          }
-          const fullHistory = await getAllCasesFromDB();
-          setAnalysisResults(fullHistory);
+          const placeholderRecords: CaseRecord[] = cases.map((text: string, index: number) => ({
+            originalText: text,
+            timestamp: Date.now() + index, // Unique temporary key
+            loading: true,
+          }));
 
-          setProgressText('Analysis complete.');
+          setAnalysisResults(prev => [...placeholderRecords.reverse(), ...prev]);
+
+          for (const placeholder of placeholderRecords) {
+            try {
+              const prompt = `Analyze the following legal case text from Saudi Arabia and extract the specified information in JSON format. If a field is not present in the text, use null for its value. Here is the case text: \n\n${placeholder.originalText}`;
+              const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt,
+                config: {
+                  responseMimeType: 'application/json',
+                  responseSchema: schema,
+                },
+              });
+              const analysis = JSON.parse(response.text);
+              const newRecord: CaseRecord = {
+                originalText: placeholder.originalText,
+                analysis,
+                timestamp: Date.now()
+              };
+              const newId = await addCaseToDB(newRecord);
+
+              setAnalysisResults(prev =>
+                prev.map(r => r.timestamp === placeholder.timestamp ? { ...newRecord, id: newId, loading: false } : r)
+              );
+            } catch (err) {
+              console.error(`Failed to analyze case:`, err);
+              const errorRecord = {
+                ...placeholder,
+                loading: false,
+                error: `Failed to analyze case. Error: ${err instanceof Error ? err.message : 'Unknown error'}`
+              };
+              setAnalysisResults(prev =>
+                prev.map(r => r.timestamp === placeholder.timestamp ? errorRecord : r)
+              );
+            }
+          }
         } catch (err) {
           console.error(err);
           setError('Failed to read or parse the JSON file. Please ensure it is a valid JSON array of strings.');
-          setProgressText('');
         } finally {
           setLoading(false);
           setUploadedFile(null);
@@ -219,19 +252,7 @@ function App() {
       };
       reader.readAsText(uploadedFile);
     } else {
-      try {
-        await analyzeAndStoreCase(caseText, 0, 1);
-        const fullHistory = await getAllCasesFromDB();
-        setAnalysisResults(fullHistory);
-        setCaseText('');
-        setProgressText('Analysis complete.');
-      } catch (err) {
-        console.error(err);
-        setError('Failed to analyze the case. Please check the console for more details.');
-        setProgressText('');
-      } finally {
-        setLoading(false);
-      }
+      await analyzeSingleCase(caseText);
     }
   };
 
@@ -289,8 +310,7 @@ function App() {
         </div>
 
         <div className="output-section">
-          {loading && <div className="loader"></div>}
-          {loading && progressText && <div className="progress-text">{progressText}</div>}
+          {loading && analysisResults.every(r => r.loading) && <div className="loader"></div>}
           {error && <div className="error-message">{error}</div>}
           {analysisResults.length > 0 && <ResultsDisplay results={analysisResults} onClear={handleClearHistory} />}
           {!loading && !error && analysisResults.length === 0 && <div className="placeholder">Your analysis history will appear here.</div>}
@@ -304,30 +324,43 @@ const ResultsDisplay = ({ results, onClear }: { results: CaseRecord[], onClear: 
   return (
     <div className="results-container">
       <div className="results-header">
-        <h2>Analysis History ({results.length})</h2>
+        <h2>Analysis History ({results.filter(r => !r.loading).length})</h2>
         <button className="clear-history-btn" onClick={onClear}>Clear History</button>
       </div>
       {results.map((result) => (
-        <ResultCard key={result.id} data={result.analysis} />
+        <ResultCard key={result.id || result.timestamp} record={result} />
       ))}
     </div>
   );
 };
 
 
-const ResultCard = ({ data }: { data: any }) => {
-  if (data.error) {
+const ResultCard = ({ record }: { record: CaseRecord }) => {
+  const { loading, error, analysis, originalText } = record;
+
+  if (loading) {
+    return (
+      <div className="result-card loading-card">
+        <div className="card-loader"></div>
+        <p>Analyzing...</p>
+      </div>
+    );
+  }
+
+  if (error) {
     return (
       <div className="result-card error-card">
         <h3>Analysis Failed</h3>
-        <p>{data.error}</p>
+        <p>{error}</p>
         <details>
           <summary>Original Text</summary>
-          <pre>{data.originalText}</pre>
+          <pre>{originalText}</pre>
         </details>
       </div>
     );
   }
+  
+  if (!analysis) return null; // Should not happen if not loading or error
 
   const renderField = (label: string, value: any) => {
     if (value === null || value === undefined || (Array.isArray(value) && value.length === 0)) {
@@ -345,50 +378,50 @@ const ResultCard = ({ data }: { data: any }) => {
       <details open>
         <summary>Case Information</summary>
         <div className="result-section">
-          {renderField('ID', data.id)}
-          {renderField('Title', data.title)}
-          {renderField('Decision Title', data.decisionTitle)}
-          {renderField('Year', `${data.year} / ${data.hijriYear}H`)}
-          {renderField('Export Date', data.exportDate)}
+          {renderField('ID', analysis.id)}
+          {renderField('Title', analysis.title)}
+          {renderField('Decision Title', analysis.decisionTitle)}
+          {renderField('Year', `${analysis.year} / ${analysis.hijriYear}H`)}
+          {renderField('Export Date', analysis.exportDate)}
         </div>
       </details>
 
-      {data.hasJudgment && (
+      {analysis.hasJudgment && (
         <details open>
           <summary>Judgment Details</summary>
           <div className="result-section">
-            {renderField('Judgment Number', data.judgmentNumber)}
-            {renderField('Date', `${data.judgmentDate} / ${data.judgmentHijriDate}H`)}
-            {renderField('Court', `${data.judgmentCourtName}, ${data.judgmentCityName}`)}
-            <div className="field-long"><strong>Facts:</strong> <p>{data.judgmentFacts}</p></div>
-            <div className="field-long"><strong>Reasons:</strong> <p>{data.judgmentReasons}</p></div>
-            <div className="field-long"><strong>Ruling:</strong> <p>{data.judgmentRuling}</p></div>
-            <div className="field-long"><strong>Text of Ruling:</strong> <p>{data.judgmentTextOfRuling}</p></div>
+            {renderField('Judgment Number', analysis.judgmentNumber)}
+            {renderField('Date', `${analysis.judgmentDate} / ${analysis.judgmentHijriDate}H`)}
+            {renderField('Court', `${analysis.judgmentCourtName}, ${analysis.judgmentCityName}`)}
+            <div className="field-long"><strong>Facts:</strong> <p>{analysis.judgmentFacts}</p></div>
+            <div className="field-long"><strong>Reasons:</strong> <p>{analysis.judgmentReasons}</p></div>
+            <div className="field-long"><strong>Ruling:</strong> <p>{analysis.judgmentRuling}</p></div>
+            <div className="field-long"><strong>Text of Ruling:</strong> <p>{analysis.judgmentTextOfRuling}</p></div>
           </div>
         </details>
       )}
 
-      {data.hasAppeal && (
+      {analysis.hasAppeal && (
         <details>
           <summary>Appeal Details</summary>
           <div className="result-section">
-            {renderField('Appeal Number', data.appealNumber)}
-            {renderField('Appeal Date', `${data.appealDate} / ${data.appealHijriDate}H`)}
-            {renderField('Appeal Court', `${data.appealCourtName}, ${data.appealCityName}`)}
-            <div className="field-long"><strong>Appeal Facts:</strong> <p>{data.appealFacts}</p></div>
-            <div className="field-long"><strong>Appeal Reasons:</strong> <p>{data.appealReasons}</p></div>
-            <div className="field-long"><strong>Appeal Ruling:</strong> <p>{data.appealRuling}</p></div>
-            <div className="field-long"><strong>Appeal Text of Ruling:</strong> <p>{data.appealTextOfRuling}</p></div>
+            {renderField('Appeal Number', analysis.appealNumber)}
+            {renderField('Appeal Date', `${analysis.appealDate} / ${analysis.appealHijriDate}H`)}
+            {renderField('Appeal Court', `${analysis.appealCourtName}, ${analysis.appealCityName}`)}
+            <div className="field-long"><strong>Appeal Facts:</strong> <p>{analysis.appealFacts}</p></div>
+            <div className="field-long"><strong>Appeal Reasons:</strong> <p>{analysis.appealReasons}</p></div>
+            <div className="field-long"><strong>Appeal Ruling:</strong> <p>{analysis.appealRuling}</p></div>
+            <div className="field-long"><strong>Appeal Text of Ruling:</strong> <p>{analysis.appealTextOfRuling}</p></div>
           </div>
         </details>
       )}
 
-      {data.judgmentNarrationList && data.judgmentNarrationList.length > 0 && (
+      {analysis.judgmentNarrationList && analysis.judgmentNarrationList.length > 0 && (
          <details>
           <summary>Judgment Narrations</summary>
           <div className="result-section">
             <ul>
-              {data.judgmentNarrationList.map((narration: string, index: number) => (
+              {analysis.judgmentNarrationList.map((narration: string, index: number) => (
                 <li key={index}>{narration}</li>
               ))}
             </ul>
@@ -398,7 +431,7 @@ const ResultCard = ({ data }: { data: any }) => {
 
       <details>
         <summary>Raw JSON Data</summary>
-        <pre>{JSON.stringify(data, null, 2)}</pre>
+        <pre>{JSON.stringify(analysis, null, 2)}</pre>
       </details>
     </div>
   );

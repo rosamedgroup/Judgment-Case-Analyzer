@@ -245,6 +245,26 @@ button:disabled {
     color: var(--error-color);
     margin-top: 0;
 }
+
+.loading-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  min-height: 100px;
+  color: #6c757d;
+  font-size: 0.9rem;
+}
+
+.card-loader {
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid var(--primary-color);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  animation: spin 1s linear infinite;
+}
+
 .results-container details {
   border-bottom: 1px solid #e9ecef;
   margin-bottom: 0;
