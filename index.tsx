@@ -138,12 +138,12 @@ function App() {
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      if (file.type === 'application/json') {
+      if (file.type === 'application/json' || file.name.endsWith('.jsonl')) {
         setUploadedFile(file);
         setCaseText(''); // Clear textarea when a file is selected
         setError('');
       } else {
-        setError('Please upload a valid JSON file.');
+        setError('Please upload a valid JSON or JSONL file.');
         e.target.value = ''; // Reset file input
       }
     }
@@ -202,29 +202,54 @@ function App() {
             resetUploadState();
             return;
           }
-          let cases;
-          try {
-            cases = JSON.parse(fileContent);
-          } catch (e) {
-            setError('Invalid JSON format. Please check the file content.');
-            resetUploadState();
-            return;
+          let cases: string[];
+
+          if (uploadedFile.name.endsWith('.jsonl')) {
+            try {
+              cases = fileContent.trim().split('\n')
+                .filter(line => line.trim() !== '')
+                .map(line => {
+                  const parsed = JSON.parse(line);
+                  if (typeof parsed !== 'string') {
+                    throw new Error('Each line in the .jsonl file must be a valid JSON string.');
+                  }
+                  return parsed;
+                });
+            } catch (e) {
+              setError('Invalid JSONL format. Each line must be a valid JSON string literal.');
+              resetUploadState();
+              return;
+            }
+          } else {
+            try {
+              const parsedContent = JSON.parse(fileContent);
+              if (!Array.isArray(parsedContent)) {
+                  setError('JSON file must be an array of strings.');
+                  resetUploadState();
+                  return;
+              }
+              cases = parsedContent;
+            } catch (e) {
+                setError('Invalid JSON format. Please check the file content.');
+                resetUploadState();
+                return;
+            }
           }
 
           if (!Array.isArray(cases)) {
-            setError('JSON file must be an array of strings.');
+            setError('The parsed file did not result in an array of cases.');
             resetUploadState();
             return;
           }
 
           if (cases.length === 0) {
-            setError('The JSON array contains no cases to analyze.');
+            setError('The file contains no cases to analyze.');
             resetUploadState();
             return;
           }
 
           if (!cases.every(c => typeof c === 'string' && c.trim() !== '')) {
-            setError('All items in the JSON array must be non-empty strings.');
+            setError('All items in the file must resolve to non-empty strings.');
             resetUploadState();
             return;
           }
@@ -350,7 +375,7 @@ function App() {
   }, [analysisResults, searchTerm]);
 
   return (
-    <main className="container">
+    <main className="container" dir="rtl">
       <header>
         <h1>Judgment Case Analyzer</h1>
         <p>Paste the text from a Saudi Arabian judgment case or upload a JSON file with multiple cases to extract structured data.</p>
@@ -451,20 +476,15 @@ const ResultsDisplay = ({ results, onClear, onExport, searchTerm, setSearchTerm 
   );
 };
 
-const TruncatedText = ({ text, maxLength = 250 }: { text: string | null, maxLength?: number }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  if (!text || text.length <= maxLength) {
-    return <p>{text}</p>;
+const CollapsibleTextField = ({ label, text }: { label: string, text: string | null | undefined }) => {
+  if (!text) {
+    return null;
   }
-
   return (
-    <div>
-      <p>{isExpanded ? text : `${text.substring(0, maxLength)}...`}</p>
-      <button className="toggle-text-btn" onClick={() => setIsExpanded(!isExpanded)}>
-        {isExpanded ? 'Show Less' : 'Show More'}
-      </button>
-    </div>
+    <details className="field-long-details">
+      <summary>{label}</summary>
+      <p>{text}</p>
+    </details>
   );
 };
 
@@ -474,15 +494,10 @@ const ResultCard = ({ record }: { record: CaseRecord }) => {
   if (loading) {
     return (
         <div className="result-card">
-            <details open>
-                <summary className="summary-loading">
-                    <span>Analyzing...</span>
-                    <div className="small-loader"></div>
-                </summary>
-                <div className="result-section">
-                  <p>Processing case text. This may take a moment.</p>
-                </div>
-            </details>
+            <div className="summary-loading">
+                <span>Analyzing...</span>
+                <div className="small-loader"></div>
+            </div>
         </div>
     )
   }
@@ -533,10 +548,10 @@ const ResultCard = ({ record }: { record: CaseRecord }) => {
             {renderField('Judgment Number', analysis.judgmentNumber)}
             {renderField('Date', `${analysis.judgmentDate} / ${analysis.judgmentHijriDate}H`)}
             {renderField('Court', `${analysis.judgmentCourtName}, ${analysis.judgmentCityName}`)}
-            <div className="field-long"><strong>Facts:</strong> <TruncatedText text={analysis.judgmentFacts} /></div>
-            <div className="field-long"><strong>Reasons:</strong> <TruncatedText text={analysis.judgmentReasons} /></div>
-            <div className="field-long"><strong>Ruling:</strong> <TruncatedText text={analysis.judgmentRuling} /></div>
-            <div className="field-long"><strong>Text of Ruling:</strong> <TruncatedText text={analysis.judgmentTextOfRuling} /></div>
+            <CollapsibleTextField label="Facts" text={analysis.judgmentFacts} />
+            <CollapsibleTextField label="Reasons" text={analysis.judgmentReasons} />
+            <CollapsibleTextField label="Ruling" text={analysis.judgmentRuling} />
+            <CollapsibleTextField label="Text of Ruling" text={analysis.judgmentTextOfRuling} />
           </div>
         </details>
       )}
@@ -548,10 +563,10 @@ const ResultCard = ({ record }: { record: CaseRecord }) => {
             {renderField('Appeal Number', analysis.appealNumber)}
             {renderField('Appeal Date', `${analysis.appealDate} / ${analysis.appealHijriDate}H`)}
             {renderField('Appeal Court', `${analysis.appealCourtName}, ${analysis.appealCityName}`)}
-            <div className="field-long"><strong>Appeal Facts:</strong> <TruncatedText text={analysis.appealFacts} /></div>
-            <div className="field-long"><strong>Appeal Reasons:</strong> <TruncatedText text={analysis.appealReasons} /></div>
-            <div className="field-long"><strong>Appeal Ruling:</strong> <TruncatedText text={analysis.appealRuling} /></div>
-            <div className="field-long"><strong>Appeal Text of Ruling:</strong> <TruncatedText text={analysis.appealTextOfRuling} /></div>
+            <CollapsibleTextField label="Appeal Facts" text={analysis.appealFacts} />
+            <CollapsibleTextField label="Appeal Reasons" text={analysis.appealReasons} />
+            <CollapsibleTextField label="Appeal Ruling" text={analysis.appealRuling} />
+            <CollapsibleTextField label="Appeal Text of Ruling" text={analysis.appealTextOfRuling} />
           </div>
         </details>
       )}
@@ -571,7 +586,9 @@ const ResultCard = ({ record }: { record: CaseRecord }) => {
 
       <details>
         <summary>Raw JSON Data</summary>
-        <pre>{JSON.stringify(analysis, null, 2)}</pre>
+        <div className="result-section">
+          <pre>{JSON.stringify(analysis, null, 2)}</pre>
+        </div>
       </details>
     </div>
   );
