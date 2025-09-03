@@ -300,6 +300,40 @@ function App() {
       }
     }
   };
+
+  const handleExportHistory = async () => {
+    try {
+      const history = await getAllCasesFromDB();
+      if (history.length === 0) {
+        alert("No analysis history to export.");
+        return;
+      }
+  
+      const exportableHistory = history.map(({ originalText, analysis, timestamp }) => ({
+        originalText,
+        analysis,
+        timestamp,
+      }));
+  
+      const jsonString = JSON.stringify(exportableHistory, null, 2);
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement("a");
+      link.href = url;
+      const date = new Date().toISOString().split('T')[0];
+      link.download = `judgment_analysis_history_${date}.json`;
+      
+      document.body.appendChild(link);
+      link.click();
+      
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export history:', err);
+      setError('Could not export history.');
+    }
+  };
   
   const filteredResults = useMemo(() => {
     if (!searchTerm.trim()) {
@@ -363,6 +397,7 @@ function App() {
             <ResultsDisplay 
               results={filteredResults} 
               onClear={handleClearHistory}
+              onExport={handleExportHistory}
               searchTerm={searchTerm}
               setSearchTerm={setSearchTerm}
             />
@@ -374,20 +409,36 @@ function App() {
   );
 }
 
-const ResultsDisplay = ({ results, onClear, searchTerm, setSearchTerm }: { results: CaseRecord[], onClear: () => void, searchTerm: string, setSearchTerm: (term: string) => void }) => {
+const ResultsDisplay = ({ results, onClear, onExport, searchTerm, setSearchTerm }: { 
+  results: CaseRecord[], 
+  onClear: () => void, 
+  onExport: () => void,
+  searchTerm: string, 
+  setSearchTerm: (term: string) => void 
+}) => {
   return (
     <div className="results-container">
       <div className="results-header">
         <h2>Analysis History ({results.filter(r => !r.loading && !r.error).length})</h2>
-        <div className="filter-controls">
-          <input
-            type="search"
-            placeholder="Filter results..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            aria-label="Filter analysis history"
-          />
-          <button className="clear-history-btn" onClick={onClear}>Clear History</button>
+        <div className="header-controls">
+          <div className="search-input-wrapper">
+            <input
+              type="search"
+              placeholder="Filter results..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              aria-label="Filter analysis history"
+            />
+            {searchTerm && (
+              <button className="clear-search-btn" onClick={() => setSearchTerm('')} aria-label="Clear search">
+                &times;
+              </button>
+            )}
+          </div>
+          <div className="button-group">
+            <button className="export-history-btn" onClick={onExport}>Export History</button>
+            <button className="clear-history-btn" onClick={onClear}>Clear History</button>
+          </div>
         </div>
       </div>
       {results.map((result) => (
@@ -396,6 +447,23 @@ const ResultsDisplay = ({ results, onClear, searchTerm, setSearchTerm }: { resul
        {results.length === 0 && searchTerm && (
         <div className="placeholder">No results match your filter.</div>
       )}
+    </div>
+  );
+};
+
+const TruncatedText = ({ text, maxLength = 250 }: { text: string | null, maxLength?: number }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  if (!text || text.length <= maxLength) {
+    return <p>{text}</p>;
+  }
+
+  return (
+    <div>
+      <p>{isExpanded ? text : `${text.substring(0, maxLength)}...`}</p>
+      <button className="toggle-text-btn" onClick={() => setIsExpanded(!isExpanded)}>
+        {isExpanded ? 'Show Less' : 'Show More'}
+      </button>
     </div>
   );
 };
@@ -465,10 +533,10 @@ const ResultCard = ({ record }: { record: CaseRecord }) => {
             {renderField('Judgment Number', analysis.judgmentNumber)}
             {renderField('Date', `${analysis.judgmentDate} / ${analysis.judgmentHijriDate}H`)}
             {renderField('Court', `${analysis.judgmentCourtName}, ${analysis.judgmentCityName}`)}
-            <div className="field-long"><strong>Facts:</strong> <p>{analysis.judgmentFacts}</p></div>
-            <div className="field-long"><strong>Reasons:</strong> <p>{analysis.judgmentReasons}</p></div>
-            <div className="field-long"><strong>Ruling:</strong> <p>{analysis.judgmentRuling}</p></div>
-            <div className="field-long"><strong>Text of Ruling:</strong> <p>{analysis.judgmentTextOfRuling}</p></div>
+            <div className="field-long"><strong>Facts:</strong> <TruncatedText text={analysis.judgmentFacts} /></div>
+            <div className="field-long"><strong>Reasons:</strong> <TruncatedText text={analysis.judgmentReasons} /></div>
+            <div className="field-long"><strong>Ruling:</strong> <TruncatedText text={analysis.judgmentRuling} /></div>
+            <div className="field-long"><strong>Text of Ruling:</strong> <TruncatedText text={analysis.judgmentTextOfRuling} /></div>
           </div>
         </details>
       )}
@@ -480,10 +548,10 @@ const ResultCard = ({ record }: { record: CaseRecord }) => {
             {renderField('Appeal Number', analysis.appealNumber)}
             {renderField('Appeal Date', `${analysis.appealDate} / ${analysis.appealHijriDate}H`)}
             {renderField('Appeal Court', `${analysis.appealCourtName}, ${analysis.appealCityName}`)}
-            <div className="field-long"><strong>Appeal Facts:</strong> <p>{analysis.appealFacts}</p></div>
-            <div className="field-long"><strong>Appeal Reasons:</strong> <p>{analysis.appealReasons}</p></div>
-            <div className="field-long"><strong>Appeal Ruling:</strong> <p>{analysis.appealRuling}</p></div>
-            <div className="field-long"><strong>Appeal Text of Ruling:</strong> <p>{analysis.appealTextOfRuling}</p></div>
+            <div className="field-long"><strong>Appeal Facts:</strong> <TruncatedText text={analysis.appealFacts} /></div>
+            <div className="field-long"><strong>Appeal Reasons:</strong> <TruncatedText text={analysis.appealReasons} /></div>
+            <div className="field-long"><strong>Appeal Ruling:</strong> <TruncatedText text={analysis.appealRuling} /></div>
+            <div className="field-long"><strong>Appeal Text of Ruling:</strong> <TruncatedText text={analysis.appealTextOfRuling} /></div>
           </div>
         </details>
       )}
