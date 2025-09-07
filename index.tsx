@@ -110,6 +110,7 @@ const translations = {
       if (count >= 3 && count <= 10) return `تم تحديد ${count} ملفات`;
       return `تم تحديد ${count} ملفًا`;
     },
+    retryButtonLabel: 'إعادة المحاولة',
   },
   en: {
     appTitle: "Judgment Case Analyzer",
@@ -192,6 +193,7 @@ const translations = {
     confirmButtonLabel: 'Confirm',
     analyzingCasesProgress: (current: number, total: number) => `Analyzing case ${current} of ${total}...`,
     filesSelected: (count: number) => `${count} file${count === 1 ? '' : 's'} selected`,
+    retryButtonLabel: 'Retry',
   }
 };
 
@@ -575,6 +577,44 @@ function App() {
     }
   };
   
+  const handleRetry = async (caseToRetry: CaseRecord) => {
+    setAnalysisResults(prev => prev.map(r =>
+      r.timestamp === caseToRetry.timestamp ? { ...caseToRetry, loading: true, error: undefined } : r
+    ));
+
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const text = caseToRetry.originalText;
+
+    try {
+      const prompt = `Analyze the following legal case text from Saudi Arabia and extract the specified information in JSON format. For the 'judgmentFacts', 'judgmentReasons', 'judgmentRuling', 'appealFacts', 'appealReasons', and 'appealRuling' fields, use simple markdown for formatting: use '**text**' for bolding, '~~text~~' for strikethrough, '\`code\`' for inline code, start lines with '* ' for bullet points, start lines with '1. ' for numbered lists, '[link text](url)' for hyperlinks, and enclose multi-line code snippets in triple backticks (\`\`\`). For tabular data, use Markdown table format. If a field is not present in the text, use null for its value. Here is the case text: \n\n${text}`;
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: schema,
+        },
+      });
+      const analysis = JSON.parse(response.text);
+      const updatedRecord: CaseRecord = { ...caseToRetry, analysis, timestamp: Date.now(), loading: false, error: undefined };
+      const newId = await putCaseInDB(updatedRecord);
+      setAnalysisResults(prev =>
+        prev.map(r => r.timestamp === caseToRetry.timestamp ? { ...updatedRecord, id: newId } : r)
+      );
+    } catch (err) {
+      console.error("Retry failed:", err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      const errorRecord = {
+        ...caseToRetry,
+        loading: false,
+        error: t('errorFailedCase', errorMessage)
+      };
+      setAnalysisResults(prev =>
+        prev.map(r => r.timestamp === caseToRetry.timestamp ? errorRecord : r)
+      );
+    }
+  };
+
   const closeDialog = () => {
     setDialogConfig({ isOpen: false, title: '', message: '', onConfirm: null });
   };
@@ -788,6 +828,7 @@ function App() {
                         onExport={handleExportHistory}
                         onUpdateCase={handleUpdateCase}
                         onDeleteCase={requestDeleteConfirmation}
+                        onRetry={handleRetry}
                         searchTerm={searchTerm}
                         setSearchTerm={setSearchTerm}
                         t={t}
@@ -802,12 +843,13 @@ function App() {
   );
 }
 
-const ResultsDisplay = ({ results, onClear, onExport, onUpdateCase, onDeleteCase, searchTerm, setSearchTerm, t }: { 
+const ResultsDisplay = ({ results, onClear, onExport, onUpdateCase, onDeleteCase, onRetry, searchTerm, setSearchTerm, t }: { 
   results: CaseRecord[], 
   onClear: () => void, 
   onExport: () => void,
   onUpdateCase: (record: CaseRecord) => Promise<void>,
   onDeleteCase: (id: number) => void,
+  onRetry: (record: CaseRecord) => void,
   searchTerm: string, 
   setSearchTerm: (term: string) => void,
   t: TFunction
@@ -849,6 +891,7 @@ const ResultsDisplay = ({ results, onClear, onExport, onUpdateCase, onDeleteCase
             onToggle={() => setExpandedId(currentId => currentId === key ? null : key)}
             onUpdate={onUpdateCase}
             onDelete={onDeleteCase}
+            onRetry={onRetry}
             t={t}
           />
         );
@@ -1084,7 +1127,7 @@ const JsonSyntaxHighlighter = ({ json }: { json: object | null }) => {
   return <pre dangerouslySetInnerHTML={{ __html: highlightedJson }} />;
 }
 
-const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, t }: { record: CaseRecord; isExpanded: boolean; onToggle: () => void; onUpdate: (record: CaseRecord) => Promise<void>; onDelete: (id: number) => void; t: TFunction; }) => {
+const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry, t }: { record: CaseRecord; isExpanded: boolean; onToggle: () => void; onUpdate: (record: CaseRecord) => Promise<void>; onDelete: (id: number) => void; onRetry: (record: CaseRecord) => void; t: TFunction; }) => {
   const { loading, error, analysis, originalText, id } = record;
   const [isEditing, setIsEditing] = useState(false);
   const [editedOriginalText, setEditedOriginalText] = useState(originalText);
@@ -1176,8 +1219,13 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, t }: { r
   if (error) {
     return (
       <div className="result-card error-card">
-        <h3>{t('analysisFailedTitle')}</h3>
-        <p>{error}</p>
+        <div className="error-card-header">
+          <h3>{t('analysisFailedTitle')}</h3>
+          <button className="retry-btn" onClick={() => onRetry(record)}>
+            {t('retryButtonLabel')}
+          </button>
+        </div>
+        <p className="error-card-message">{error}</p>
         <details>
           <summary>{t('originalTextSection')}</summary>
           <pre>{originalText}</pre>

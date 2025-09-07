@@ -485,10 +485,42 @@ button:disabled {
     border-color: color-mix(in srgb, var(--error-color) 30%, transparent);
     padding: calc(var(--spacing-unit) * 2);
 }
+.error-card .error-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-unit);
+}
 .error-card h3 {
     color: var(--error-color);
-    margin-block-start: 0;
+    margin: 0;
+    font-size: 1.2rem;
 }
+.error-card-message {
+    margin-bottom: calc(var(--spacing-unit) * 2);
+}
+.error-card details > summary {
+    cursor: pointer;
+    font-weight: 500;
+    color: var(--text-color-secondary);
+}
+.retry-btn {
+    padding: var(--spacing-unit) calc(var(--spacing-unit) * 1.5);
+    font-size: 0.875rem;
+    font-weight: 500;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: none;
+    letter-spacing: normal;
+    background-color: var(--text-color-secondary);
+}
+.retry-btn:hover:not(:disabled) {
+    background-color: #5a6268;
+    box-shadow: none;
+    transform: none;
+}
+
 
 .summary-loading {
     display: flex;
