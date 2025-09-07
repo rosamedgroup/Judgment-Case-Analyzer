@@ -26,12 +26,12 @@ type TranslationKey = keyof Translations;
 const translations = {
   ar: {
     appTitle: "محلل قضايا الأحكام",
-    appDescription: "الصق نص قضية حكم سعودية أو قم بتحميل ملف JSON يحتوي على قضايا متعددة لاستخراج البيانات المنظمة.",
+    appDescription: "الصق نص قضية حكم سعودية أو قم بتحميل ملفات (JSON, JSONL, TXT, MD) تحتوي على قضايا متعددة لاستخراج البيانات المنظمة.",
     caseTextLabel: "نص القضية",
     caseTextPlaceholder: "الصق النص الكامل لقضية الحكم هنا...",
     orDivider: "أو",
-    uploadFileLabel: "تحميل ملف JSON",
-    analyzeButton: "تحليل القضية",
+    uploadFileLabel: "تحميل ملفات",
+    analyzeButton: "تحليل",
     analyzingButton: "جاري التحليل...",
     analysisHistoryTitle: "سجل التحليلات",
     filterPlaceholder: "تصفية النتائج...",
@@ -72,14 +72,14 @@ const translations = {
     loadingAnalysis: "جاري التحليل...",
     analysisFailedTitle: "فشل التحليل",
     errorPasteOrUpload: "يرجى لصق نص القضية أو تحميل ملف قبل التحليل.",
-    errorInvalidFile: "يرجى تحميل ملف JSON أو JSONL صالح.",
+    errorInvalidFile: "يرجى تحميل ملفات JSON أو JSONL أو TXT أو MD صالحة.",
     errorFailedAnalysis: "فشل تحليل القضية. يرجى مراجعة وحدة التحكم لمزيد من التفاصيل.",
-    errorEmptyFile: "الملف الذي تم تحميله فارغ.",
+    errorEmptyFile: "أحد الملفات التي تم تحميلها فارغ.",
     errorInvalidJsonl: "تنسيق JSONL غير صالح. يجب أن يكون كل سطر عبارة عن سلسلة JSON صالحة.",
     errorJsonNotArray: "يجب أن يكون ملف JSON مصفوفة من السلاسل.",
     errorInvalidJson: "تنسيق JSON غير صالح. يرجى التحقق من محتوى الملف.",
     errorFileNotArray: "الملف الذي تم تحليله لم ينتج عنه مصفوفة من القضايا.",
-    errorFileNoCases: "لا يحتوي الملف على قضايا لتحليلها.",
+    errorFileNoCases: "لا تحتوي الملفات على أي قضايا لتحليلها.",
     errorFileNonString: "يجب أن تكون جميع العناصر في الملف سلاسل نصية غير فارغة.",
     errorFailedCase: (err: string) => `فشل تحليل القضية. الخطأ: ${err}`,
     errorReadFile: "فشل قراءة الملف.",
@@ -87,26 +87,38 @@ const translations = {
     errorClearHistory: "تعذر مسح السجل.",
     errorExportHistory: "تعذر تصدير السجل.",
     confirmClearHistory: "هل أنت متأكد من أنك تريد مسح كل سجل التحليل؟ لا يمكن التراجع عن هذا الإجراء.",
+    confirmDeleteCase: "هل أنت متأكد من أنك تريد حذف تحليل هذه القضية؟ لا يمكن التراجع عن هذا الإجراء.",
     alertNoHistoryToExport: "لا يوجد سجل تحليل لتصديره.",
     editButtonLabel: 'تعديل',
     saveButtonLabel: 'حفظ',
+    savingButtonLabel: 'جاري الحفظ...',
     cancelButtonLabel: 'إلغاء',
+    deleteButtonLabel: 'حذف',
     editingAnalysisTitle: 'تعديل التحليل',
     errorInvalidJsonFormat: 'صيغة JSON غير صالحة. يرجى تصحيحها قبل الحفظ.',
     errorUpdateCase: (err: string) => `فشل تحديث القضية. الخطأ: ${err}`,
-    analyzeTab: 'تحليل قضية',
+    errorDeleteCase: 'تعذر حذف القضية.',
+    analyzeTab: 'تحليل',
     historyTab: 'السجل',
     copyButtonLabel: 'نسخ',
     copiedButtonLabel: 'تم النسخ!',
+    confirmButtonLabel: 'تأكيد',
+    analyzingCasesProgress: (current: number, total: number) => `جاري تحليل القضية ${current} من ${total}...`,
+    filesSelected: (count: number) => {
+      if (count === 1) return `تم تحديد ملف واحد`;
+      if (count === 2) return `تم تحديد ملفين`;
+      if (count >= 3 && count <= 10) return `تم تحديد ${count} ملفات`;
+      return `تم تحديد ${count} ملفًا`;
+    },
   },
   en: {
     appTitle: "Judgment Case Analyzer",
-    appDescription: "Paste the text from a Saudi Arabian judgment case or upload a JSON file with multiple cases to extract structured data.",
+    appDescription: "Paste the text from a Saudi Arabian judgment case or upload files (JSON, JSONL, TXT, MD) with multiple cases to extract structured data.",
     caseTextLabel: "Case Text",
     caseTextPlaceholder: "Paste the full text of the judgment case here...",
     orDivider: "OR",
-    uploadFileLabel: "Upload JSON File",
-    analyzeButton: "Analyze Case",
+    uploadFileLabel: "Upload Files",
+    analyzeButton: "Analyze",
     analyzingButton: "Analyzing...",
     analysisHistoryTitle: "Analysis History",
     filterPlaceholder: "Filter results...",
@@ -147,14 +159,14 @@ const translations = {
     loadingAnalysis: "Analyzing...",
     analysisFailedTitle: "Analysis Failed",
     errorPasteOrUpload: 'Please paste the case text or upload a file before analyzing.',
-    errorInvalidFile: 'Please upload a valid JSON or JSONL file.',
+    errorInvalidFile: 'Please upload valid JSON, JSONL, TXT, or MD files.',
     errorFailedAnalysis: 'Failed to analyze the case. Please check the console for more details.',
-    errorEmptyFile: 'The uploaded file is empty.',
+    errorEmptyFile: 'An uploaded file is empty.',
     errorInvalidJsonl: 'Invalid JSONL format. Each line must be a valid JSON string literal.',
     errorJsonNotArray: 'JSON file must be an array of strings.',
     errorInvalidJson: 'Invalid JSON format. Please check the file content.',
     errorFileNotArray: 'The parsed file did not result in an array of cases.',
-    errorFileNoCases: 'The file contains no cases to analyze.',
+    errorFileNoCases: 'The files contain no cases to analyze.',
     errorFileNonString: 'All items in the file must resolve to non-empty strings.',
     errorFailedCase: (err: string) => `Failed to analyze case. Error: ${err}`,
     errorReadFile: 'Failed to read the file.',
@@ -162,17 +174,24 @@ const translations = {
     errorClearHistory: 'Could not clear history.',
     errorExportHistory: 'Could not export history.',
     confirmClearHistory: 'Are you sure you want to clear all analysis history? This action cannot be undone.',
+    confirmDeleteCase: 'Are you sure you want to delete this case analysis? This action cannot be undone.',
     alertNoHistoryToExport: "No analysis history to export.",
     editButtonLabel: 'Edit',
     saveButtonLabel: 'Save',
+    savingButtonLabel: 'Saving...',
     cancelButtonLabel: 'Cancel',
+    deleteButtonLabel: 'Delete',
     editingAnalysisTitle: 'Editing Analysis',
     errorInvalidJsonFormat: 'Invalid JSON format. Please correct it before saving.',
     errorUpdateCase: (err: string) => `Failed to update case. Error: ${err}`,
-    analyzeTab: 'Analyze Case',
+    errorDeleteCase: 'Could not delete case.',
+    analyzeTab: 'Analyze',
     historyTab: 'History',
     copyButtonLabel: 'Copy',
     copiedButtonLabel: 'Copied!',
+    confirmButtonLabel: 'Confirm',
+    analyzingCasesProgress: (current: number, total: number) => `Analyzing case ${current} of ${total}...`,
+    filesSelected: (count: number) => `${count} file${count === 1 ? '' : 's'} selected`,
   }
 };
 
@@ -197,6 +216,18 @@ const putCaseInDB = (record: CaseRecord): Promise<number> => {
       const store = transaction.objectStore(STORE_NAME);
       const request = store.put(record);
       request.onsuccess = () => resolve(request.result as number);
+      request.onerror = () => reject(request.error);
+    });
+  });
+};
+
+const deleteCaseFromDB = (id: number): Promise<void> => {
+  return openDB().then(db => {
+    return new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.delete(id);
+      request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
   });
@@ -269,10 +300,36 @@ const schema = {
   }
 };
 
+type TFunction = (key: TranslationKey, ...args: any[]) => string;
+
+const ConfirmationDialog = ({ isOpen, title, message, onConfirm, onCancel, t }: {
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    onCancel: () => void;
+    t: TFunction;
+}) => {
+    if (!isOpen) return null;
+
+    return (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+            <div className="modal-content">
+                <h3 id="dialog-title">{title}</h3>
+                <p>{message}</p>
+                <div className="modal-actions">
+                    <button className="dialog-cancel-btn" onClick={onCancel}>{t('cancelButtonLabel')}</button>
+                    <button className="dialog-confirm-btn" onClick={onConfirm}>{t('confirmButtonLabel')}</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 
 function App() {
   const [caseText, setCaseText] = useState('');
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<FileList | null>(null);
   const [analysisResults, setAnalysisResults] = useState<CaseRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [dbLoading, setDbLoading] = useState(true);
@@ -280,6 +337,14 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [language, setLanguage] = useState(localStorage.getItem('judgment-analyzer-lang') || 'ar');
   const [activeTab, setActiveTab] = useState('input');
+  const [dialogConfig, setDialogConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: (() => void) | null;
+  }>({ isOpen: false, title: '', message: '', onConfirm: null });
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
+
 
   useEffect(() => {
     localStorage.setItem('judgment-analyzer-lang', language);
@@ -312,29 +377,35 @@ function App() {
   }, [t]);
   
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (file.type === 'application/json' || file.name.endsWith('.jsonl')) {
-        setUploadedFile(file);
-        setCaseText(''); // Clear textarea when a file is selected
+    if (e.target.files && e.target.files.length > 0) {
+      const files = e.target.files;
+      const allowedExtensions = ['.json', '.jsonl', '.txt', '.md'];
+      const allValid = Array.from(files).every(file => 
+        allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
+      );
+  
+      if (allValid) {
+        setUploadedFiles(files);
+        setCaseText(''); // Clear textarea when files are selected
         setError('');
       } else {
         setError(t('errorInvalidFile'));
         e.target.value = ''; // Reset file input
+        setUploadedFiles(null);
       }
     }
   };
 
   const resetUploadState = () => {
     setLoading(false);
-    setUploadedFile(null);
+    setUploadedFiles(null);
     const fileInput = document.getElementById('file-upload') as HTMLInputElement;
     if (fileInput) fileInput.value = '';
   }
   
   const handleAnalyze = async (e: FormEvent) => {
     e.preventDefault();
-    if (!caseText.trim() && !uploadedFile) {
+    if (!caseText.trim() && !uploadedFiles) {
       setError(t('errorPasteOrUpload'));
       if (activeTab !== 'input') setActiveTab('input');
       return;
@@ -356,7 +427,7 @@ function App() {
       setCaseText('');
 
       try {
-        const prompt = `Analyze the following legal case text from Saudi Arabia and extract the specified information in JSON format. For the 'judgmentFacts', 'judgmentReasons', 'judgmentRuling', 'appealFacts', 'appealReasons', and 'appealRuling' fields, use simple markdown for formatting: use '**text**' for bolding, '~~text~~' for strikethrough, '\`code\`' for inline code, start lines with '* ' for bullet points, start lines with '1. ' for numbered lists, '[link text](url)' for hyperlinks, and enclose multi-line code snippets in triple backticks (\`\`\`). If a field is not present in the text, use null for its value. Here is the case text: \n\n${text}`;
+        const prompt = `Analyze the following legal case text from Saudi Arabia and extract the specified information in JSON format. For the 'judgmentFacts', 'judgmentReasons', 'judgmentRuling', 'appealFacts', 'appealReasons', and 'appealRuling' fields, use simple markdown for formatting: use '**text**' for bolding, '~~text~~' for strikethrough, '\`code\`' for inline code, start lines with '* ' for bullet points, start lines with '1. ' for numbered lists, '[link text](url)' for hyperlinks, and enclose multi-line code snippets in triple backticks (\`\`\`). For tabular data, use Markdown table format. If a field is not present in the text, use null for its value. Here is the case text: \n\n${text}`;
         const response = await ai.models.generateContent({
           model: 'gemini-2.5-flash',
           contents: prompt,
@@ -387,139 +458,144 @@ function App() {
       }
     };
 
-    if (uploadedFile) {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        try {
-          const fileContent = event.target?.result as string;
-           if (!fileContent) {
-            setError(t('errorEmptyFile'));
-            resetUploadState();
-            return;
-          }
-          let cases: string[];
-
-          if (uploadedFile.name.endsWith('.jsonl')) {
-            try {
-              cases = fileContent.trim().split('\n')
-                .filter(line => line.trim() !== '')
-                .map(line => {
-                  const parsed = JSON.parse(line);
-                  if (typeof parsed !== 'string') {
-                    throw new Error(t('errorInvalidJsonl'));
-                  }
-                  return parsed;
+    if (uploadedFiles) {
+        const getCasesFromFiles = async (files: FileList): Promise<string[]> => {
+            const fileReadPromises = Array.from(files).map(file => {
+                return new Promise<string[]>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        try {
+                            const content = event.target?.result as string;
+                            if (!content || !content.trim()) {
+                                resolve([]);
+                                return;
+                            }
+                            const fileName = file.name.toLowerCase();
+                            if (fileName.endsWith('.jsonl')) {
+                                const cases = content.trim().split('\n').filter(line => line.trim() !== '').map(line => {
+                                    const parsed = JSON.parse(line);
+                                    if (typeof parsed !== 'string') {
+                                        throw new Error(t('errorInvalidJsonl'));
+                                    }
+                                    return parsed;
+                                });
+                                resolve(cases);
+                            } else if (fileName.endsWith('.json')) {
+                                const parsedContent = JSON.parse(content);
+                                if (!Array.isArray(parsedContent)) {
+                                    throw new Error(t('errorJsonNotArray'));
+                                }
+                                if (!parsedContent.every(c => typeof c === 'string' && c.trim() !== '')) {
+                                    throw new Error(t('errorFileNonString'));
+                                }
+                                resolve(parsedContent);
+                            } else if (fileName.endsWith('.txt') || fileName.endsWith('.md')) {
+                                resolve([content]);
+                            } else {
+                                resolve([]);
+                            }
+                        } catch (err) {
+                            reject(err);
+                        }
+                    };
+                    reader.onerror = () => reject(new Error(t('errorReadFile')));
+                    reader.readAsText(file);
                 });
-            } catch (e) {
-              setError(t('errorInvalidJsonl'));
-              resetUploadState();
-              return;
-            }
-          } else {
-            try {
-              const parsedContent = JSON.parse(fileContent);
-              if (!Array.isArray(parsedContent)) {
-                  setError(t('errorJsonNotArray'));
-                  resetUploadState();
-                  return;
-              }
-              cases = parsedContent;
-            } catch (e) {
-                setError(t('errorInvalidJson'));
-                resetUploadState();
-                return;
-            }
-          }
+            });
 
-          if (!Array.isArray(cases)) {
-            setError(t('errorFileNotArray'));
-            resetUploadState();
-            return;
-          }
+            const nestedCases = await Promise.all(fileReadPromises);
+            return nestedCases.flat();
+        };
 
-          if (cases.length === 0) {
-            setError(t('errorFileNoCases'));
-            resetUploadState();
-            return;
-          }
-
-          if (!cases.every(c => typeof c === 'string' && c.trim() !== '')) {
-            setError(t('errorFileNonString'));
-            resetUploadState();
-            return;
-          }
-
-          const placeholderRecords: CaseRecord[] = cases.map((text: string, index: number) => ({
-            originalText: text,
-            timestamp: Date.now() + index, // Unique temporary key
-            loading: true,
-          }));
-
-          setAnalysisResults(prev => [...placeholderRecords.reverse(), ...prev]);
-          setActiveTab('history');
-
-          for (const placeholder of placeholderRecords) {
-            try {
-              const prompt = `Analyze the following legal case text from Saudi Arabia and extract the specified information in JSON format. For the 'judgmentFacts', 'judgmentReasons', 'judgmentRuling', 'appealFacts', 'appealReasons', and 'appealRuling' fields, use simple markdown for formatting: use '**text**' for bolding, '~~text~~' for strikethrough, '\`code\`' for inline code, start lines with '* ' for bullet points, start lines with '1. ' for numbered lists, '[link text](url)' for hyperlinks, and enclose multi-line code snippets in triple backticks (\`\`\`). If a field is not present in the text, use null for its value. Here is the case text: \n\n${placeholder.originalText}`;
-              const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
-                config: {
-                  responseMimeType: 'application/json',
-                  responseSchema: schema,
-                },
-              });
-              const analysis = JSON.parse(response.text);
-              const newRecord: CaseRecord = {
-                originalText: placeholder.originalText,
-                analysis,
-                timestamp: Date.now()
-              };
-              const newId = await putCaseInDB(newRecord);
-
-              setAnalysisResults(prev =>
-                prev.map(r => r.timestamp === placeholder.timestamp ? { ...newRecord, id: newId, loading: false } : r)
-              );
-            } catch (err) {
-              console.error(`Failed to analyze case:`, err);
-              const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-              const errorRecord = {
-                ...placeholder,
-                loading: false,
-                error: t('errorFailedCase', errorMessage)
-              };
-              setAnalysisResults(prev =>
-                prev.map(r => r.timestamp === placeholder.timestamp ? errorRecord : r)
-              );
-            }
-          }
-        } catch (err) {
-          console.error(err);
-           setError(err instanceof Error ? err.message : 'An unexpected error occurred during file processing.');
-        } finally {
+      try {
+        const cases = await getCasesFromFiles(uploadedFiles);
+        if (cases.length === 0) {
+          setError(t('errorFileNoCases'));
           resetUploadState();
+          return;
         }
-      };
-      reader.onerror = () => {
-        setError(t('errorReadFile'));
-        setLoading(false);
-      };
-      reader.readAsText(uploadedFile);
+
+        setUploadProgress({ current: 0, total: cases.length });
+
+        const placeholderRecords: CaseRecord[] = cases.map((text: string, index: number) => ({
+          originalText: text,
+          timestamp: Date.now() + index, // Unique temporary key
+          loading: true,
+        }));
+
+        setAnalysisResults(prev => [...placeholderRecords.reverse(), ...prev]);
+        setActiveTab('history');
+
+        for (const [index, placeholder] of placeholderRecords.entries()) {
+          try {
+            const prompt = `Analyze the following legal case text from Saudi Arabia and extract the specified information in JSON format. For the 'judgmentFacts', 'judgmentReasons', 'judgmentRuling', 'appealFacts', 'appealReasons', and 'appealRuling' fields, use simple markdown for formatting: use '**text**' for bolding, '~~text~~' for strikethrough, '\`code\`' for inline code, start lines with '* ' for bullet points, start lines with '1. ' for numbered lists, '[link text](url)' for hyperlinks, and enclose multi-line code snippets in triple backticks (\`\`\`). For tabular data, use Markdown table format. If a field is not present in the text, use null for its value. Here is the case text: \n\n${placeholder.originalText}`;
+            const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: prompt,
+              config: {
+                responseMimeType: 'application/json',
+                responseSchema: schema,
+              },
+            });
+            const analysis = JSON.parse(response.text);
+            const newRecord: CaseRecord = {
+              originalText: placeholder.originalText,
+              analysis,
+              timestamp: Date.now()
+            };
+            const newId = await putCaseInDB(newRecord);
+
+            setAnalysisResults(prev =>
+              prev.map(r => r.timestamp === placeholder.timestamp ? { ...newRecord, id: newId, loading: false } : r)
+            );
+          } catch (err) {
+            console.error(`Failed to analyze case:`, err);
+            const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+            const errorRecord = {
+              ...placeholder,
+              loading: false,
+              error: t('errorFailedCase', errorMessage)
+            };
+            setAnalysisResults(prev =>
+              prev.map(r => r.timestamp === placeholder.timestamp ? errorRecord : r)
+            );
+          } finally {
+            setUploadProgress(prev => prev ? { ...prev, current: index + 1 } : null);
+          }
+        }
+      } catch (err) {
+        console.error(err);
+         setError(err instanceof Error ? err.message : 'An unexpected error occurred during file processing.');
+      } finally {
+        resetUploadState();
+        setUploadProgress(null);
+      }
     } else {
       await analyzeSingleCase(caseText);
     }
   };
+  
+  const closeDialog = () => {
+    setDialogConfig({ isOpen: false, title: '', message: '', onConfirm: null });
+  };
 
   const handleClearHistory = async () => {
-    if (window.confirm(t('confirmClearHistory'))) {
-      try {
-        await clearAllCasesFromDB();
-        setAnalysisResults([]);
-      } catch (err) {
-        console.error('Failed to clear history:', err);
-        setError(t('errorClearHistory'));
-      }
-    }
+    setDialogConfig({
+        isOpen: true,
+        title: t('clearHistoryButton'),
+        message: t('confirmClearHistory'),
+        onConfirm: async () => {
+            try {
+                await clearAllCasesFromDB();
+                setAnalysisResults([]);
+            } catch (err) {
+                console.error('Failed to clear history:', err);
+                setError(t('errorClearHistory'));
+            } finally {
+                closeDialog();
+            }
+        },
+    });
   };
 
   const handleExportHistory = async () => {
@@ -569,9 +645,30 @@ function App() {
         const errorMessage = err instanceof Error ? err.message : String(err);
         console.error("Failed to update case:", errorMessage);
         setError(t('errorUpdateCase', errorMessage));
+        // Re-throw to allow local error handling in the component
+        throw err;
     }
-};
+  };
   
+  const requestDeleteConfirmation = (idToDelete: number) => {
+    setDialogConfig({
+      isOpen: true,
+      title: t('deleteButtonLabel'),
+      message: t('confirmDeleteCase'),
+      onConfirm: async () => {
+        try {
+          await deleteCaseFromDB(idToDelete);
+          setAnalysisResults(prev => prev.filter(r => r.id !== idToDelete));
+        } catch (err) {
+          console.error('Failed to delete case:', err);
+          setError(t('errorDeleteCase'));
+        } finally {
+          closeDialog();
+        }
+      },
+    });
+  };
+
   const filteredResults = useMemo(() => {
     if (!searchTerm.trim()) {
       return analysisResults;
@@ -618,41 +715,65 @@ function App() {
             {t('historyTab')}
         </button>
       </div>
+      
+      <ConfirmationDialog
+        isOpen={dialogConfig.isOpen}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        onConfirm={() => dialogConfig.onConfirm && dialogConfig.onConfirm()}
+        onCancel={closeDialog}
+        t={t}
+      />
 
       <div className="tab-content">
         {activeTab === 'input' && (
             <div id="input-panel" className="input-section" role="tabpanel" aria-labelledby="input-tab">
                 {error && <div className="error-message">{error}</div>}
-                <form onSubmit={handleAnalyze}>
-                    <label htmlFor="case-text">{t('caseTextLabel')}</label>
-                    <textarea
-                        id="case-text"
-                        value={caseText}
-                        onChange={(e) => {
-                            setCaseText(e.target.value);
-                            if (uploadedFile) {
-                                setUploadedFile(null);
-                                const fileInput = document.getElementById('file-upload') as HTMLInputElement;
-                                if (fileInput) fileInput.value = '';
-                            }
-                        }}
-                        placeholder={t('caseTextPlaceholder')}
-                        rows={15}
-                        disabled={loading}
-                        aria-label="Case Text Input"
-                    />
-                    <div className="divider">{t('orDivider')}</div>
-                    <div className="file-input-wrapper">
-                    <label htmlFor="file-upload" className="file-label">
-                        {t('uploadFileLabel')}
-                    </label>
-                    <input id="file-upload" type="file" onChange={handleFileChange} accept=".json,.jsonl" disabled={loading} />
-                    {uploadedFile && <span className="file-name">{uploadedFile.name}</span>}
+                {loading && uploadProgress ? (
+                  <div className="progress-indicator">
+                    <p>{t('analyzingCasesProgress', uploadProgress.current, uploadProgress.total)}</p>
+                    <div className="progress-bar-container">
+                      <div
+                        className="progress-bar"
+                        style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+                        aria-valuenow={uploadProgress.current}
+                        aria-valuemin={0}
+                        aria-valuemax={uploadProgress.total}
+                      ></div>
                     </div>
-                    <button type="submit" disabled={loading}>
-                    {loading ? t('analyzingButton') : t('analyzeButton')}
-                    </button>
-                </form>
+                  </div>
+                ) : (
+                  <form onSubmit={handleAnalyze}>
+                      <label htmlFor="case-text">{t('caseTextLabel')}</label>
+                      <textarea
+                          id="case-text"
+                          value={caseText}
+                          onChange={(e) => {
+                              setCaseText(e.target.value);
+                              if (uploadedFiles) {
+                                  setUploadedFiles(null);
+                                  const fileInput = document.getElementById('file-upload') as HTMLInputElement;
+                                  if (fileInput) fileInput.value = '';
+                              }
+                          }}
+                          placeholder={t('caseTextPlaceholder')}
+                          rows={15}
+                          disabled={loading}
+                          aria-label="Case Text Input"
+                      />
+                      <div className="divider">{t('orDivider')}</div>
+                      <div className="file-input-wrapper">
+                      <label htmlFor="file-upload" className="file-label">
+                          {t('uploadFileLabel')}
+                      </label>
+                      <input id="file-upload" type="file" onChange={handleFileChange} accept=".json,.jsonl,.txt,.md" disabled={loading} multiple />
+                      {uploadedFiles && <span className="file-name">{t('filesSelected', uploadedFiles.length)}</span>}
+                      </div>
+                      <button type="submit" disabled={loading}>
+                      {loading ? t('analyzingButton') : t('analyzeButton')}
+                      </button>
+                  </form>
+                )}
             </div>
         )}
         {activeTab === 'history' && (
@@ -666,6 +787,7 @@ function App() {
                         onClear={handleClearHistory}
                         onExport={handleExportHistory}
                         onUpdateCase={handleUpdateCase}
+                        onDeleteCase={requestDeleteConfirmation}
                         searchTerm={searchTerm}
                         setSearchTerm={setSearchTerm}
                         t={t}
@@ -680,13 +802,12 @@ function App() {
   );
 }
 
-type TFunction = (key: TranslationKey, ...args: any[]) => string;
-
-const ResultsDisplay = ({ results, onClear, onExport, onUpdateCase, searchTerm, setSearchTerm, t }: { 
+const ResultsDisplay = ({ results, onClear, onExport, onUpdateCase, onDeleteCase, searchTerm, setSearchTerm, t }: { 
   results: CaseRecord[], 
   onClear: () => void, 
   onExport: () => void,
   onUpdateCase: (record: CaseRecord) => Promise<void>,
+  onDeleteCase: (id: number) => void,
   searchTerm: string, 
   setSearchTerm: (term: string) => void,
   t: TFunction
@@ -727,6 +848,7 @@ const ResultsDisplay = ({ results, onClear, onExport, onUpdateCase, searchTerm, 
             isExpanded={expandedId === key}
             onToggle={() => setExpandedId(currentId => currentId === key ? null : key)}
             onUpdate={onUpdateCase}
+            onDelete={onDeleteCase}
             t={t}
           />
         );
@@ -830,7 +952,11 @@ const MarkdownRenderer = ({ text }: { text: string | null | undefined }) => {
     }
   }
 
-  text.split('\n').forEach((line, lineIndex) => {
+  const lines = text.split('\n');
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
     if (line.trim().startsWith('```')) {
       if (inCodeBlock) {
         flushCodeBlock();
@@ -840,30 +966,79 @@ const MarkdownRenderer = ({ text }: { text: string | null | undefined }) => {
         flushOrderedList();
         inCodeBlock = true;
       }
-      return;
+      continue;
     }
     
     if (inCodeBlock) {
       currentCodeBlock.push(line);
-      return;
+      continue;
+    }
+
+    const parseTableCells = (l: string) => l.trim().replace(/^\||\|$/g, '').split('|').map(s => s.trim());
+    
+    const isSeparatorLine = (l: string) => {
+        if (!l.includes('|')) return false;
+        const parts = parseTableCells(l);
+        if (parts.length === 0 || (parts.length === 1 && parts[0] === '')) return false;
+        return parts.every(p => /^\s*:?-+:?\s*$/.test(p) && p.trim() !== '');
+    };
+    const isTableLine = (l: string) => l.includes('|');
+
+    // Table Detection
+    if (isTableLine(line) && i + 1 < lines.length && isSeparatorLine(lines[i + 1])) {
+        flushUnorderedList();
+        flushOrderedList();
+
+        const headerContent = parseTableCells(line);
+        const bodyRows = [];
+        
+        i += 2; // Move index past header and separator
+
+        while(i < lines.length && isTableLine(lines[i])) {
+            bodyRows.push(parseTableCells(lines[i]));
+            i++;
+        }
+        i--; // Decrement because the for loop will increment it
+
+        elements.push(
+            <table key={`table-${elements.length}`}>
+                <thead>
+                    <tr>
+                        {headerContent.map((header, index) => (
+                            <th key={index}>{processInlineMarkdown(header)}</th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {bodyRows.map((row, rowIndex) => (
+                        <tr key={rowIndex}>
+                            {row.map((cell, cellIndex) => (
+                                <td key={cellIndex}>{processInlineMarkdown(cell)}</td>
+                            ))}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        );
+        continue;
     }
 
     if (line.trim().startsWith('* ')) {
       flushOrderedList();
       const content = line.trim().substring(2);
-      currentUnorderedList.push(<li key={lineIndex}>{processInlineMarkdown(content)}</li>);
+      currentUnorderedList.push(<li key={i}>{processInlineMarkdown(content)}</li>);
     } else if (/^\d+\.\s/.test(line.trim())) {
       flushUnorderedList();
       const content = line.trim().replace(/^\d+\.\s/, '');
-      currentOrderedList.push(<li key={lineIndex}>{processInlineMarkdown(content)}</li>);
+      currentOrderedList.push(<li key={i}>{processInlineMarkdown(content)}</li>);
     } else {
       flushUnorderedList();
       flushOrderedList();
       if (line.trim() !== '') {
-        elements.push(<p key={lineIndex}>{processInlineMarkdown(line)}</p>);
+        elements.push(<p key={i}>{processInlineMarkdown(line)}</p>);
       }
     }
-  });
+  }
 
   flushUnorderedList();
   flushOrderedList();
@@ -871,6 +1046,7 @@ const MarkdownRenderer = ({ text }: { text: string | null | undefined }) => {
 
   return <div className="markdown-content">{elements}</div>;
 };
+
 
 const LongTextField = ({ label, text, className }: { label: string, text: string | null | undefined, className?: string }) => {
   if (!text) {
@@ -908,12 +1084,13 @@ const JsonSyntaxHighlighter = ({ json }: { json: object | null }) => {
   return <pre dangerouslySetInnerHTML={{ __html: highlightedJson }} />;
 }
 
-const ResultCard = ({ record, isExpanded, onToggle, onUpdate, t }: { record: CaseRecord; isExpanded: boolean; onToggle: () => void; onUpdate: (record: CaseRecord) => Promise<void>; t: TFunction; }) => {
+const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, t }: { record: CaseRecord; isExpanded: boolean; onToggle: () => void; onUpdate: (record: CaseRecord) => Promise<void>; onDelete: (id: number) => void; t: TFunction; }) => {
   const { loading, error, analysis, originalText, id } = record;
   const [isEditing, setIsEditing] = useState(false);
   const [editedOriginalText, setEditedOriginalText] = useState(originalText);
   const [editedAnalysis, setEditedAnalysis] = useState(JSON.stringify(analysis || {}, null, 2));
   const [jsonError, setJsonError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const [copyStatus, setCopyStatus] = useState(t('copyButtonLabel'));
 
   useEffect(() => {
@@ -941,6 +1118,13 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, t }: { record: Cas
     setIsEditing(true);
   };
 
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (id !== undefined) {
+        onDelete(id);
+    }
+  };
+
   const handleCancel = () => {
     setIsEditing(false);
   };
@@ -960,15 +1144,22 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, t }: { record: Cas
         return;
     }
 
-    const updatedRecord: CaseRecord = {
-        ...record,
-        id,
-        originalText: editedOriginalText,
-        analysis: parsedAnalysis,
-    };
-    
-    await onUpdate(updatedRecord);
-    setIsEditing(false);
+    setIsSaving(true);
+    try {
+      const updatedRecord: CaseRecord = {
+          ...record,
+          id,
+          originalText: editedOriginalText,
+          analysis: parsedAnalysis,
+      };
+      await onUpdate(updatedRecord);
+      setIsEditing(false);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setJsonError(t('errorUpdateCase', errorMessage));
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (loading) {
@@ -1010,6 +1201,7 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, t }: { record: Cas
               value={editedOriginalText}
               onChange={(e) => setEditedOriginalText(e.target.value)}
               rows={10}
+              disabled={isSaving}
             />
           </div>
           <div className="edit-form-field">
@@ -1022,12 +1214,15 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, t }: { record: Cas
               rows={20}
               aria-invalid={!!jsonError}
               aria-describedby={jsonError ? `json-error-${id}` : undefined}
+              disabled={isSaving}
             />
             {jsonError && <p id={`json-error-${id}`} className="json-error">{jsonError}</p>}
           </div>
           <div className="edit-form-controls">
-            <button className="cancel-btn" onClick={handleCancel}>{t('cancelButtonLabel')}</button>
-            <button onClick={handleSave}>{t('saveButtonLabel')}</button>
+            <button className="cancel-btn" onClick={handleCancel} disabled={isSaving}>{t('cancelButtonLabel')}</button>
+            <button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? t('savingButtonLabel') : t('saveButtonLabel')}
+            </button>
           </div>
         </div>
       </div>
@@ -1061,6 +1256,7 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, t }: { record: Cas
         </div>
         <div className="result-card-header-controls">
            {id !== undefined && <button className="edit-btn" onClick={handleEdit}>{t('editButtonLabel')}</button>}
+           {id !== undefined && <button className="delete-btn" onClick={handleDelete}>{t('deleteButtonLabel')}</button>}
            <div className="expand-indicator" />
         </div>
       </div>
