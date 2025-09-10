@@ -3,13 +3,26 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import { GoogleGenAI, Type } from '@google/genai';
-import { useState, FormEvent, ChangeEvent, useEffect, useMemo, useCallback } from 'react';
+import { useState, FormEvent, ChangeEvent, useEffect, useMemo, useCallback, useRef, MouseEvent } from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
+import { Bar, Doughnut } from 'react-chartjs-2';
+import { format, subDays, startOfDay } from 'date-fns';
+
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
 
 const DB_NAME = 'JudgmentCaseDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'cases';
+
+interface CaseError {
+  title: string;
+  message: string;
+  suggestion?: string;
+  raw?: string;
+}
 
 interface CaseRecord {
   id?: number;
@@ -17,7 +30,8 @@ interface CaseRecord {
   analysis?: any;
   timestamp: number;
   loading?: boolean;
-  error?: string;
+  error?: CaseError;
+  tags?: string[];
 }
 
 type Translations = typeof translations.en;
@@ -75,12 +89,12 @@ const translations = {
     errorInvalidFile: "يرجى تحميل ملفات JSON أو JSONL أو TXT أو MD صالحة.",
     errorFailedAnalysis: "فشل تحليل القضية. يرجى مراجعة وحدة التحكم لمزيد من التفاصيل.",
     errorEmptyFile: "أحد الملفات التي تم تحميلها فارغ.",
-    errorInvalidJsonl: "تنسيق JSONL غير صالح. يجب أن يكون كل سطر عبارة عن سلسلة JSON صالحة.",
-    errorJsonNotArray: "يجب أن يكون ملف JSON مصفوفة من السلاسل.",
+    errorInvalidJsonl: "تنسيق JSONL غير صالح. يجب أن يكون كل سطر عبارة عن كائن JSON صالح.",
+    errorJsonNotArray: "يجب أن يكون ملف JSON مصفوفة من العناصر.",
     errorInvalidJson: "تنسيق JSON غير صالح. يرجى التحقق من محتوى الملف.",
     errorFileNotArray: "الملف الذي تم تحليله لم ينتج عنه مصفوفة من القضايا.",
     errorFileNoCases: "لا تحتوي الملفات على أي قضايا لتحليلها.",
-    errorFileNonString: "يجب أن تكون جميع العناصر في الملف سلاسل نصية غير فارغة.",
+    errorFileNonString: "لم يتم العثور على أي نص صالح في الملف.",
     errorFailedCase: (err: string) => `فشل تحليل القضية. الخطأ: ${err}`,
     errorReadFile: "فشل قراءة الملف.",
     errorLoadHistory: "تعذر تحميل سجل التحليل.",
@@ -111,6 +125,46 @@ const translations = {
       return `تم تحديد ${count} ملفًا`;
     },
     retryButtonLabel: 'إعادة المحاولة',
+    tagsLabel: 'الوسوم',
+    addTagPlaceholder: 'أضف وسمًا...',
+    addTagButtonLabel: 'إضافة',
+    noTagsPlaceholder: 'لا توجد وسوم بعد.',
+    filterByTagTooltip: 'انقر للتصفية حسب هذا الوسم',
+    errorParsingTitle: "خطأ في التحليل",
+    errorParsingMessage: "لم تكن استجابة النموذج بالتنسيق المتوقع (JSON).",
+    errorParsingSuggestion: "قد يحدث هذا مع المدخلات المعقدة أو الغامضة. حاول إعادة صياغة النص الأصلي والمحاولة مرة أخرى.",
+    errorRateLimitTitle: "تم تجاوز حد المعدل",
+    errorRateLimitMessage: "لقد قمت بتقديم عدد كبير جدًا من الطلبات في فترة قصيرة.",
+    errorRateLimitSuggestion: "يرجى الانتظار للحظة قبل المحاولة مرة أخرى.",
+    errorApiKeyTitle: "مفتاح API غير صالح",
+    errorApiKeyMessage: "مفتاح API المقدم غير صالح أو انتهت صلاحيته. يرجى التحقق من الإعدادات الخاصة بك.",
+    errorApiTitle: "خطأ في API",
+    errorApiMessage: "حدث خطأ أثناء الاتصال بخدمة التحليل.",
+    errorApiSuggestion: "قد يكون النص المدخل غير صالح أو ينتهك سياسات السلامة. حاول تبسيط النص. انظر التفاصيل أدناه.",
+    errorGenericSuggestion: "يمكنك إعادة محاولة التحليل، أو تعديل النص الأصلي إذا كنت تشك في أنه قد يكون سبب المشكلة.",
+    viewErrorDetails: "عرض تفاصيل الخطأ",
+    editAndRetryButtonLabel: "تعديل وإعادة المحاولة",
+    saveAndRetryButtonLabel: "حفظ وإعادة المحاولة",
+    adminDashboardButton: "لوحة التحكم",
+    appViewButton: "عرض التطبيق",
+    adminDashboardTitle: "لوحة تحكم المسؤول",
+    analyticsSection: "التحليلات",
+    userManagementSection: "إدارة المستخدمين",
+    contentManagementSection: "إدارة المحتوى",
+    securityMonitoringSection: "الأمان والمراقبة",
+    configurationSettingsSection: "الإعدادات",
+    totalCasesAnalyzed: "إجمالي القضايا المحللة",
+    casesWithAppeals: "قضايا باستئناف",
+    analysisErrors: "أخطاء التحليل",
+    totalUniqueTags: "إجمالي الوسوم الفريدة",
+    casesAnalyzedLast30Days: "القضايا المحللة في آخر 30 يومًا",
+    casesByAppealStatus: "القضايا حسب حالة الاستئناف",
+    withAppeal: "مع استئناف",
+    withoutAppeal: "بدون استئناف",
+    themeLabel: "المظهر",
+    lightTheme: "فاتح",
+    darkTheme: "داكن",
+    backendRequiredNotice: "تتطلب هذه الميزة تكاملًا مع الواجهة الخلفية وهي معطلة حاليًا.",
   },
   en: {
     appTitle: "Judgment Case Analyzer",
@@ -163,12 +217,12 @@ const translations = {
     errorInvalidFile: 'Please upload valid JSON, JSONL, TXT, or MD files.',
     errorFailedAnalysis: 'Failed to analyze the case. Please check the console for more details.',
     errorEmptyFile: 'An uploaded file is empty.',
-    errorInvalidJsonl: 'Invalid JSONL format. Each line must be a valid JSON string literal.',
-    errorJsonNotArray: 'JSON file must be an array of strings.',
+    errorInvalidJsonl: 'Invalid JSONL format. Each line must be a valid JSON object.',
+    errorJsonNotArray: 'JSON file must be an array of items.',
     errorInvalidJson: 'Invalid JSON format. Please check the file content.',
     errorFileNotArray: 'The parsed file did not result in an array of cases.',
     errorFileNoCases: 'The files contain no cases to analyze.',
-    errorFileNonString: 'All items in the file must resolve to non-empty strings.',
+    errorFileNonString: 'No valid text content found in the file.',
     errorFailedCase: (err: string) => `Failed to analyze case. Error: ${err}`,
     errorReadFile: 'Failed to read the file.',
     errorLoadHistory: "Could not load analysis history.",
@@ -194,6 +248,46 @@ const translations = {
     analyzingCasesProgress: (current: number, total: number) => `Analyzing case ${current} of ${total}...`,
     filesSelected: (count: number) => `${count} file${count === 1 ? '' : 's'} selected`,
     retryButtonLabel: 'Retry',
+    tagsLabel: 'Tags',
+    addTagPlaceholder: 'Add a tag...',
+    addTagButtonLabel: 'Add',
+    noTagsPlaceholder: 'No tags yet.',
+    filterByTagTooltip: 'Click to filter by this tag',
+    errorParsingTitle: "Parsing Error",
+    errorParsingMessage: "The model's response was not in the expected format (JSON).",
+    errorParsingSuggestion: "This can happen with complex or ambiguous input. Try rephrasing the original text and retrying.",
+    errorRateLimitTitle: "Rate Limit Exceeded",
+    errorRateLimitMessage: "You have made too many requests in a short period.",
+    errorRateLimitSuggestion: "Please wait for a moment before retrying.",
+    errorApiKeyTitle: "Invalid API Key",
+    errorApiKeyMessage: "The provided API key is invalid or has expired. Please check your configuration.",
+    errorApiTitle: "API Error",
+    errorApiMessage: "An error occurred while communicating with the analysis service.",
+    errorApiSuggestion: "The input text might be invalid or violate safety policies. Try simplifying the text. See details below.",
+    errorGenericSuggestion: "You can retry the analysis, or edit the original text if you suspect it may be causing the issue.",
+    viewErrorDetails: "View Error Details",
+    editAndRetryButtonLabel: "Edit & Retry",
+    saveAndRetryButtonLabel: "Save & Retry",
+    adminDashboardButton: "Admin Dashboard",
+    appViewButton: "App View",
+    adminDashboardTitle: "Admin Dashboard",
+    analyticsSection: "Analytics",
+    userManagementSection: "User Management",
+    contentManagementSection: "Content Management",
+    securityMonitoringSection: "Security & Monitoring",
+    configurationSettingsSection: "Configuration & Settings",
+    totalCasesAnalyzed: "Total Cases Analyzed",
+    casesWithAppeals: "Cases with Appeals",
+    analysisErrors: "Analysis Errors",
+    totalUniqueTags: "Total Unique Tags",
+    casesAnalyzedLast30Days: "Cases Analyzed (Last 30 Days)",
+    casesByAppealStatus: "Cases by Appeal Status",
+    withAppeal: "With Appeal",
+    withoutAppeal: "Without Appeal",
+    themeLabel: "Theme",
+    lightTheme: "Light",
+    darkTheme: "Dark",
+    backendRequiredNotice: "This feature requires a backend integration and is currently disabled.",
   }
 };
 
@@ -346,7 +440,13 @@ function App() {
     onConfirm: (() => void) | null;
   }>({ isOpen: false, title: '', message: '', onConfirm: null });
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
+  const [view, setView] = useState<'app' | 'admin'>('app');
 
+  useEffect(() => {
+    // Apply theme on initial load
+    const savedTheme = localStorage.getItem('judgment-analyzer-theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('judgment-analyzer-lang', language);
@@ -404,6 +504,49 @@ function App() {
     const fileInput = document.getElementById('file-upload') as HTMLInputElement;
     if (fileInput) fileInput.value = '';
   }
+
+  const classifyError = (err: any, rawResponse?: string): CaseError => {
+    if (err instanceof SyntaxError) {
+        return {
+            title: t('errorParsingTitle'),
+            message: t('errorParsingMessage'),
+            suggestion: t('errorParsingSuggestion'),
+            raw: rawResponse || err.message
+        };
+    }
+    const errorMessage = err instanceof Error ? err.message : String(err);
+
+    if (/rate limit/i.test(errorMessage)) {
+         return {
+            title: t('errorRateLimitTitle'),
+            message: t('errorRateLimitMessage'),
+            suggestion: t('errorRateLimitSuggestion'),
+        };
+    }
+
+     if (/API key not valid/i.test(errorMessage)) {
+         return {
+            title: t('errorApiKeyTitle'),
+            message: t('errorApiKeyMessage'),
+        };
+    }
+    
+    if (errorMessage.includes('[400') || err.name === 'GoogleGenerativeAIError') {
+         return {
+            title: t('errorApiTitle'),
+            message: t('errorApiMessage'),
+            suggestion: t('errorApiSuggestion'),
+            raw: errorMessage,
+        };
+    }
+
+    return {
+        title: t('analysisFailedTitle'),
+        message: t('errorFailedCase', errorMessage),
+        suggestion: t('errorGenericSuggestion'),
+        raw: errorMessage,
+    };
+  }
   
   const handleAnalyze = async (e: FormEvent) => {
     e.preventDefault();
@@ -427,7 +570,8 @@ function App() {
       setAnalysisResults(prev => [placeholder, ...prev]);
       setActiveTab('history');
       setCaseText('');
-
+      
+      let rawResponseText: string | undefined;
       try {
         const prompt = `Analyze the following legal case text from Saudi Arabia and extract the specified information in JSON format. For the 'judgmentFacts', 'judgmentReasons', 'judgmentRuling', 'appealFacts', 'appealReasons', and 'appealRuling' fields, use simple markdown for formatting: use '**text**' for bolding, '~~text~~' for strikethrough, '\`code\`' for inline code, start lines with '* ' for bullet points, start lines with '1. ' for numbered lists, '[link text](url)' for hyperlinks, and enclose multi-line code snippets in triple backticks (\`\`\`). For tabular data, use Markdown table format. If a field is not present in the text, use null for its value. Here is the case text: \n\n${text}`;
         const response = await ai.models.generateContent({
@@ -438,19 +582,20 @@ function App() {
             responseSchema: schema,
           },
         });
-        const analysis = JSON.parse(response.text);
-        const newRecord: CaseRecord = { originalText: text, analysis, timestamp: Date.now() };
+        rawResponseText = response.text;
+        const analysis = JSON.parse(rawResponseText);
+        const newRecord: CaseRecord = { originalText: text, analysis, timestamp: Date.now(), tags: [] };
         const newId = await putCaseInDB(newRecord);
         setAnalysisResults(prev =>
           prev.map(r => r.timestamp === placeholder.timestamp ? { ...newRecord, id: newId, loading: false } : r)
         );
       } catch (err) {
         console.error(err);
-        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-        const errorRecord = {
+        const classifiedError = classifyError(err, rawResponseText);
+        const errorRecord: CaseRecord = {
             ...placeholder,
             loading: false,
-            error: t('errorFailedCase', errorMessage)
+            error: classifiedError
         };
         setAnalysisResults(prev =>
             prev.map(r => r.timestamp === placeholder.timestamp ? errorRecord : r)
@@ -473,31 +618,57 @@ function App() {
                                 return;
                             }
                             const fileName = file.name.toLowerCase();
+
+                            const extractText = (item: any): string | null => {
+                                if (typeof item === 'string' && item.trim()) {
+                                    return item.trim();
+                                }
+                                if (typeof item === 'object' && item !== null) {
+                                    if (typeof item.originalText === 'string' && item.originalText.trim()) return item.originalText.trim();
+                                    if (typeof item.text === 'string' && item.text.trim()) return item.text.trim();
+                                    if (typeof item.content === 'string' && item.content.trim()) return item.content.trim();
+                                    // Fallback for objects without a clear text field
+                                    return JSON.stringify(item);
+                                }
+                                return null;
+                            };
+
                             if (fileName.endsWith('.jsonl')) {
-                                const cases = content.trim().split('\n').filter(line => line.trim() !== '').map(line => {
-                                    const parsed = JSON.parse(line);
-                                    if (typeof parsed !== 'string') {
-                                        throw new Error(t('errorInvalidJsonl'));
-                                    }
-                                    return parsed;
-                                });
+                                const cases = content.trim().split('\n')
+                                    .filter(line => line.trim() !== '')
+                                    .map(line => {
+                                        try {
+                                            const parsed = JSON.parse(line);
+                                            return extractText(parsed);
+                                        } catch {
+                                            return null; // Ignore malformed JSON lines
+                                        }
+                                    })
+                                    .filter((c): c is string => !!c);
                                 resolve(cases);
                             } else if (fileName.endsWith('.json')) {
                                 const parsedContent = JSON.parse(content);
-                                if (!Array.isArray(parsedContent)) {
-                                    throw new Error(t('errorJsonNotArray'));
+                                if (Array.isArray(parsedContent)) {
+                                    const cases = parsedContent
+                                        .map(extractText)
+                                        .filter((c): c is string => !!c);
+                                    resolve(cases);
+                                } else {
+                                    // Handle single JSON object file or other JSON value
+                                    const caseText = extractText(parsedContent);
+                                    resolve(caseText ? [caseText] : []);
                                 }
-                                if (!parsedContent.every(c => typeof c === 'string' && c.trim() !== '')) {
-                                    throw new Error(t('errorFileNonString'));
-                                }
-                                resolve(parsedContent);
                             } else if (fileName.endsWith('.txt') || fileName.endsWith('.md')) {
                                 resolve([content]);
                             } else {
                                 resolve([]);
                             }
                         } catch (err) {
-                            reject(err);
+                            if (err instanceof SyntaxError) {
+                                reject(new Error(t('errorInvalidJson')));
+                            } else {
+                                reject(err);
+                            }
                         }
                     };
                     reader.onerror = () => reject(new Error(t('errorReadFile')));
@@ -529,6 +700,7 @@ function App() {
         setActiveTab('history');
 
         for (const [index, placeholder] of placeholderRecords.entries()) {
+          let rawResponseText: string | undefined;
           try {
             const prompt = `Analyze the following legal case text from Saudi Arabia and extract the specified information in JSON format. For the 'judgmentFacts', 'judgmentReasons', 'judgmentRuling', 'appealFacts', 'appealReasons', and 'appealRuling' fields, use simple markdown for formatting: use '**text**' for bolding, '~~text~~' for strikethrough, '\`code\`' for inline code, start lines with '* ' for bullet points, start lines with '1. ' for numbered lists, '[link text](url)' for hyperlinks, and enclose multi-line code snippets in triple backticks (\`\`\`). For tabular data, use Markdown table format. If a field is not present in the text, use null for its value. Here is the case text: \n\n${placeholder.originalText}`;
             const response = await ai.models.generateContent({
@@ -539,11 +711,13 @@ function App() {
                 responseSchema: schema,
               },
             });
-            const analysis = JSON.parse(response.text);
+            rawResponseText = response.text;
+            const analysis = JSON.parse(rawResponseText);
             const newRecord: CaseRecord = {
               originalText: placeholder.originalText,
               analysis,
-              timestamp: Date.now()
+              timestamp: Date.now(),
+              tags: []
             };
             const newId = await putCaseInDB(newRecord);
 
@@ -552,11 +726,11 @@ function App() {
             );
           } catch (err) {
             console.error(`Failed to analyze case:`, err);
-            const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+            const classifiedError = classifyError(err, rawResponseText);
             const errorRecord = {
               ...placeholder,
               loading: false,
-              error: t('errorFailedCase', errorMessage)
+              error: classifiedError,
             };
             setAnalysisResults(prev =>
               prev.map(r => r.timestamp === placeholder.timestamp ? errorRecord : r)
@@ -577,16 +751,18 @@ function App() {
     }
   };
   
-  const handleRetry = async (caseToRetry: CaseRecord) => {
+  const handleRetry = async (caseToRetry: CaseRecord, newText?: string) => {
+    const textToAnalyze = newText ?? caseToRetry.originalText;
+    
     setAnalysisResults(prev => prev.map(r =>
-      r.timestamp === caseToRetry.timestamp ? { ...caseToRetry, loading: true, error: undefined } : r
+      r.timestamp === caseToRetry.timestamp ? { ...caseToRetry, originalText: textToAnalyze, loading: true, error: undefined } : r
     ));
 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const text = caseToRetry.originalText;
 
+    let rawResponseText: string | undefined;
     try {
-      const prompt = `Analyze the following legal case text from Saudi Arabia and extract the specified information in JSON format. For the 'judgmentFacts', 'judgmentReasons', 'judgmentRuling', 'appealFacts', 'appealReasons', and 'appealRuling' fields, use simple markdown for formatting: use '**text**' for bolding, '~~text~~' for strikethrough, '\`code\`' for inline code, start lines with '* ' for bullet points, start lines with '1. ' for numbered lists, '[link text](url)' for hyperlinks, and enclose multi-line code snippets in triple backticks (\`\`\`). For tabular data, use Markdown table format. If a field is not present in the text, use null for its value. Here is the case text: \n\n${text}`;
+      const prompt = `Analyze the following legal case text from Saudi Arabia and extract the specified information in JSON format. For the 'judgmentFacts', 'judgmentReasons', 'judgmentRuling', 'appealFacts', 'appealReasons', and 'appealRuling' fields, use simple markdown for formatting: use '**text**' for bolding, '~~text~~' for strikethrough, '\`code\`' for inline code, start lines with '* ' for bullet points, start lines with '1. ' for numbered lists, '[link text](url)' for hyperlinks, and enclose multi-line code snippets in triple backticks (\`\`\`). For tabular data, use Markdown table format. If a field is not present in the text, use null for its value. Here is the case text: \n\n${textToAnalyze}`;
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,
@@ -595,19 +771,21 @@ function App() {
           responseSchema: schema,
         },
       });
-      const analysis = JSON.parse(response.text);
-      const updatedRecord: CaseRecord = { ...caseToRetry, analysis, timestamp: Date.now(), loading: false, error: undefined };
+      rawResponseText = response.text;
+      const analysis = JSON.parse(rawResponseText);
+      const updatedRecord: CaseRecord = { ...caseToRetry, originalText: textToAnalyze, analysis, timestamp: Date.now(), loading: false, error: undefined, tags: caseToRetry.tags || [] };
       const newId = await putCaseInDB(updatedRecord);
       setAnalysisResults(prev =>
         prev.map(r => r.timestamp === caseToRetry.timestamp ? { ...updatedRecord, id: newId } : r)
       );
     } catch (err) {
       console.error("Retry failed:", err);
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      const classifiedError = classifyError(err, rawResponseText);
       const errorRecord = {
         ...caseToRetry,
+        originalText: textToAnalyze,
         loading: false,
-        error: t('errorFailedCase', errorMessage)
+        error: classifiedError,
       };
       setAnalysisResults(prev =>
         prev.map(r => r.timestamp === caseToRetry.timestamp ? errorRecord : r)
@@ -646,10 +824,11 @@ function App() {
         return;
       }
   
-      const exportableHistory = history.map(({ originalText, analysis, timestamp }) => ({
+      const exportableHistory = history.map(({ originalText, analysis, timestamp, tags }) => ({
         originalText,
         analysis,
         timestamp,
+        tags
       }));
   
       const jsonString = JSON.stringify(exportableHistory, null, 2);
@@ -719,42 +898,34 @@ function App() {
       const analysisMatch = record.analysis ?
         JSON.stringify(record.analysis).toLowerCase().includes(lowerCaseSearchTerm) :
         false;
-      return textMatch || analysisMatch;
+      const tagMatch = record.tags?.some(tag => tag.toLowerCase().includes(lowerCaseSearchTerm));
+      return textMatch || analysisMatch || tagMatch;
     });
   }, [analysisResults, searchTerm]);
+
+  const allTags = useMemo(() => {
+    const tagsSet = new Set<string>();
+    analysisResults.forEach(record => {
+        record.tags?.forEach(tag => tagsSet.add(tag));
+    });
+    return Array.from(tagsSet).sort();
+  }, [analysisResults]);
+
 
   return (
     <main className="container">
       <header>
-        <button onClick={() => setLanguage(lang => lang === 'ar' ? 'en' : 'ar')} className="lang-switcher">
-          {language === 'ar' ? 'English' : 'العربية'}
-        </button>
+        <div className="header-top-controls">
+            <button onClick={() => setLanguage(lang => lang === 'ar' ? 'en' : 'ar')} className="lang-switcher">
+                {language === 'ar' ? 'English' : 'العربية'}
+            </button>
+            <button onClick={() => setView(v => v === 'app' ? 'admin' : 'app')} className="admin-toggle-btn">
+                {view === 'app' ? t('adminDashboardButton') : t('appViewButton')}
+            </button>
+        </div>
         <h1>{t('appTitle')}</h1>
         <p>{t('appDescription')}</p>
       </header>
-
-      <div className="tabs-container" role="tablist">
-        <button
-            className={`tab-button ${activeTab === 'input' ? 'active' : ''}`}
-            onClick={() => setActiveTab('input')}
-            role="tab"
-            aria-selected={activeTab === 'input'}
-            aria-controls="input-panel"
-            id="input-tab"
-        >
-            {t('analyzeTab')}
-        </button>
-        <button
-            className={`tab-button ${activeTab === 'history' ? 'active' : ''}`}
-            onClick={() => setActiveTab('history')}
-            role="tab"
-            aria-selected={activeTab === 'history'}
-            aria-controls="history-panel"
-            id="history-tab"
-        >
-            {t('historyTab')}
-        </button>
-      </div>
       
       <ConfirmationDialog
         isOpen={dialogConfig.isOpen}
@@ -765,91 +936,121 @@ function App() {
         t={t}
       />
 
-      <div className="tab-content">
-        {activeTab === 'input' && (
-            <div id="input-panel" className="input-section" role="tabpanel" aria-labelledby="input-tab">
-                {error && <div className="error-message">{error}</div>}
-                {loading && uploadProgress ? (
-                  <div className="progress-indicator">
-                    <p>{t('analyzingCasesProgress', uploadProgress.current, uploadProgress.total)}</p>
-                    <div className="progress-bar-container">
-                      <div
-                        className="progress-bar"
-                        style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
-                        aria-valuenow={uploadProgress.current}
-                        aria-valuemin={0}
-                        aria-valuemax={uploadProgress.total}
-                      ></div>
+      {view === 'app' ? (
+        <>
+            <div className="tabs-container" role="tablist">
+                <button
+                    className={`tab-button ${activeTab === 'input' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('input')}
+                    role="tab"
+                    aria-selected={activeTab === 'input'}
+                    aria-controls="input-panel"
+                    id="input-tab"
+                >
+                    {t('analyzeTab')}
+                </button>
+                <button
+                    className={`tab-button ${activeTab === 'history' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('history')}
+                    role="tab"
+                    aria-selected={activeTab === 'history'}
+                    aria-controls="history-panel"
+                    id="history-tab"
+                >
+                    {t('historyTab')}
+                </button>
+            </div>
+            <div className="tab-content">
+            {activeTab === 'input' && (
+                <div id="input-panel" className="input-section" role="tabpanel" aria-labelledby="input-tab">
+                    {error && <div className="error-message">{error}</div>}
+                    {loading && uploadProgress ? (
+                    <div className="progress-indicator">
+                        <p>{t('analyzingCasesProgress', uploadProgress.current, uploadProgress.total)}</p>
+                        <div className="progress-bar-container">
+                        <div
+                            className="progress-bar"
+                            style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+                            aria-valuenow={uploadProgress.current}
+                            aria-valuemin={0}
+                            aria-valuemax={uploadProgress.total}
+                        ></div>
+                        </div>
                     </div>
-                  </div>
-                ) : (
-                  <form onSubmit={handleAnalyze}>
-                      <label htmlFor="case-text">{t('caseTextLabel')}</label>
-                      <textarea
-                          id="case-text"
-                          value={caseText}
-                          onChange={(e) => {
-                              setCaseText(e.target.value);
-                              if (uploadedFiles) {
-                                  setUploadedFiles(null);
-                                  const fileInput = document.getElementById('file-upload') as HTMLInputElement;
-                                  if (fileInput) fileInput.value = '';
-                              }
-                          }}
-                          placeholder={t('caseTextPlaceholder')}
-                          rows={15}
-                          disabled={loading}
-                          aria-label="Case Text Input"
-                      />
-                      <div className="divider">{t('orDivider')}</div>
-                      <div className="file-input-wrapper">
-                      <label htmlFor="file-upload" className="file-label">
-                          {t('uploadFileLabel')}
-                      </label>
-                      <input id="file-upload" type="file" onChange={handleFileChange} accept=".json,.jsonl,.txt,.md" disabled={loading} multiple />
-                      {uploadedFiles && <span className="file-name">{t('filesSelected', uploadedFiles.length)}</span>}
-                      </div>
-                      <button type="submit" disabled={loading}>
-                      {loading ? t('analyzingButton') : t('analyzeButton')}
-                      </button>
-                  </form>
-                )}
+                    ) : (
+                    <form onSubmit={handleAnalyze}>
+                        <label htmlFor="case-text">{t('caseTextLabel')}</label>
+                        <textarea
+                            id="case-text"
+                            value={caseText}
+                            onChange={(e) => {
+                                setCaseText(e.target.value);
+                                if (uploadedFiles) {
+                                    setUploadedFiles(null);
+                                    const fileInput = document.getElementById('file-upload') as HTMLInputElement;
+                                    if (fileInput) fileInput.value = '';
+                                }
+                            }}
+                            placeholder={t('caseTextPlaceholder')}
+                            rows={15}
+                            disabled={loading}
+                            aria-label="Case Text Input"
+                        />
+                        <div className="divider">{t('orDivider')}</div>
+                        <div className="file-input-wrapper">
+                        <label htmlFor="file-upload" className="file-label">
+                            {t('uploadFileLabel')}
+                        </label>
+                        <input id="file-upload" type="file" onChange={handleFileChange} accept=".json,.jsonl,.txt,.md" disabled={loading} multiple />
+                        {uploadedFiles && <span className="file-name">{t('filesSelected', uploadedFiles.length)}</span>}
+                        </div>
+                        <button type="submit" disabled={loading}>
+                        {loading ? t('analyzingButton') : t('analyzeButton')}
+                        </button>
+                    </form>
+                    )}
+                </div>
+            )}
+            {activeTab === 'history' && (
+                <div id="history-panel" className="output-section" role="tabpanel" aria-labelledby="history-tab">
+                    {error && activeTab === 'history' && <div className="error-message">{error}</div>}
+                    {dbLoading ? (
+                        <div className="loader"></div>
+                    ) : (analysisResults.length > 0 || searchTerm) ? (
+                        <ResultsDisplay 
+                            results={filteredResults} 
+                            allTags={allTags}
+                            onClear={handleClearHistory}
+                            onExport={handleExportHistory}
+                            onUpdateCase={handleUpdateCase}
+                            onDeleteCase={requestDeleteConfirmation}
+                            onRetry={handleRetry}
+                            searchTerm={searchTerm}
+                            setSearchTerm={setSearchTerm}
+                            t={t}
+                        />
+                    ) : (
+                        <div className="placeholder">{t('noHistoryPlaceholder')}</div>
+                    )}
+                </div>
+            )}
             </div>
-        )}
-        {activeTab === 'history' && (
-            <div id="history-panel" className="output-section" role="tabpanel" aria-labelledby="history-tab">
-                {error && activeTab === 'history' && <div className="error-message">{error}</div>}
-                {dbLoading ? (
-                    <div className="loader"></div>
-                ) : (analysisResults.length > 0 || searchTerm) ? (
-                    <ResultsDisplay 
-                        results={filteredResults} 
-                        onClear={handleClearHistory}
-                        onExport={handleExportHistory}
-                        onUpdateCase={handleUpdateCase}
-                        onDeleteCase={requestDeleteConfirmation}
-                        onRetry={handleRetry}
-                        searchTerm={searchTerm}
-                        setSearchTerm={setSearchTerm}
-                        t={t}
-                    />
-                ) : (
-                    <div className="placeholder">{t('noHistoryPlaceholder')}</div>
-                )}
-            </div>
-        )}
-      </div>
+        </>
+      ) : (
+        <AdminDashboard allCases={analysisResults} t={t} />
+      )}
     </main>
   );
 }
 
-const ResultsDisplay = ({ results, onClear, onExport, onUpdateCase, onDeleteCase, onRetry, searchTerm, setSearchTerm, t }: { 
+const ResultsDisplay = ({ results, allTags, onClear, onExport, onUpdateCase, onDeleteCase, onRetry, searchTerm, setSearchTerm, t }: { 
   results: CaseRecord[], 
+  allTags: string[],
   onClear: () => void, 
   onExport: () => void,
   onUpdateCase: (record: CaseRecord) => Promise<void>,
   onDeleteCase: (id: number) => void,
-  onRetry: (record: CaseRecord) => void,
+  onRetry: (record: CaseRecord, newText?: string) => void,
   searchTerm: string, 
   setSearchTerm: (term: string) => void,
   t: TFunction
@@ -881,6 +1082,22 @@ const ResultsDisplay = ({ results, onClear, onExport, onUpdateCase, onDeleteCase
           </div>
         </div>
       </div>
+
+      {allTags.length > 0 && (
+        <div className="tag-cloud">
+          {allTags.map(tag => (
+            <button
+              key={tag}
+              className={`tag-cloud-item ${searchTerm === tag ? 'active' : ''}`}
+              onClick={() => setSearchTerm(tag)}
+              title={t('filterByTagTooltip')}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      )}
+
       {results.map((result) => {
         const key = result.id ?? result.timestamp;
         return (
@@ -892,6 +1109,7 @@ const ResultsDisplay = ({ results, onClear, onExport, onUpdateCase, onDeleteCase
             onUpdate={onUpdateCase}
             onDelete={onDeleteCase}
             onRetry={onRetry}
+            onSetSearchTerm={setSearchTerm}
             t={t}
           />
         );
@@ -1105,13 +1323,9 @@ const LongTextField = ({ label, text, className }: { label: string, text: string
   );
 };
 
-const JsonSyntaxHighlighter = ({ json }: { json: object | null }) => {
-  if (!json) {
-    return <pre></pre>;
-  }
-  const jsonString = JSON.stringify(json, null, 2);
-
-  const highlightedJson = jsonString
+const highlightJsonString = (jsonString: string): string => {
+  if (!jsonString) return '';
+  return jsonString
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') // Basic HTML escaping
     .replace(/"(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?/g, (match) => {
       let cls = 'json-string';
@@ -1123,18 +1337,154 @@ const JsonSyntaxHighlighter = ({ json }: { json: object | null }) => {
     .replace(/\b(true|false)\b/g, '<span class="json-boolean">$1</span>')
     .replace(/\b(null)\b/g, '<span class="json-null">$1</span>')
     .replace(/\b-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?\b/g, '<span class="json-number">$&</span>');
+};
+
+const JsonSyntaxHighlighter = ({ json }: { json: object | null }) => {
+  if (!json) {
+    return <pre></pre>;
+  }
+  const jsonString = JSON.stringify(json, null, 2);
+  const highlightedJson = highlightJsonString(jsonString);
 
   return <pre dangerouslySetInnerHTML={{ __html: highlightedJson }} />;
 }
 
-const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry, t }: { record: CaseRecord; isExpanded: boolean; onToggle: () => void; onUpdate: (record: CaseRecord) => Promise<void>; onDelete: (id: number) => void; onRetry: (record: CaseRecord) => void; t: TFunction; }) => {
+type MarkdownToolType = 'bold' | 'strikethrough' | 'code' | 'ul' | 'ol' | 'link';
+
+const MarkdownToolbar = ({ onApply }: { onApply: (type: MarkdownToolType) => void }) => {
+    return (
+        <div className="markdown-toolbar">
+            <button type="button" onClick={() => onApply('bold')} title="Bold"><b>B</b></button>
+            <button type="button" onClick={() => onApply('strikethrough')} title="Strikethrough"><del>S</del></button>
+            <button type="button" onClick={() => onApply('ul')} title="Bullet Points" aria-label="Bullet Points">●</button>
+            <button type="button" onClick={() => onApply('ol')} title="Numbered List" aria-label="Numbered List">1.</button>
+            <button type="button" onClick={() => onApply('code')} title="Inline Code" aria-label="Inline Code">&lt;/&gt;</button>
+            <button type="button" onClick={() => onApply('link')} title="Link" aria-label="Link">🔗</button>
+        </div>
+    );
+};
+
+const MarkdownEditor = ({ value, onChange, disabled, rows, id }: { value: string, onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void, disabled?: boolean, rows?: number, id?: string }) => {
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    
+    const applyMarkdown = (type: MarkdownToolType) => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const selectedText = value.substring(start, end);
+
+        const wrap = (prefix: string, suffix: string, placeholder: string) => {
+            const textToWrap = selectedText || placeholder;
+            const newText = `${prefix}${textToWrap}${suffix}`;
+            const newValue = value.substring(0, start) + newText + value.substring(end);
+            onChange({ target: { value: newValue } } as ChangeEvent<HTMLTextAreaElement>);
+            
+            setTimeout(() => {
+              textarea.focus();
+              textarea.setSelectionRange(start + prefix.length, start + prefix.length + textToWrap.length);
+            }, 0);
+        };
+
+        const prefixLine = (prefix: string) => {
+            let lineStart = start;
+            while (lineStart > 0 && value[lineStart - 1] !== '\n') {
+                lineStart--;
+            }
+            const newValue = value.substring(0, lineStart) + prefix + value.substring(lineStart);
+            onChange({ target: { value: newValue } } as ChangeEvent<HTMLTextAreaElement>);
+            
+            setTimeout(() => {
+              textarea.focus();
+              textarea.setSelectionRange(start + prefix.length, end + prefix.length);
+            }, 0);
+        };
+        
+        switch(type) {
+            case 'bold': wrap('**', '**', 'bold text'); break;
+            case 'strikethrough': wrap('~~', '~~', 'strikethrough'); break;
+            case 'code': wrap('`', '`', 'code'); break;
+            case 'link': wrap('[', '](url)', 'link text'); break;
+            case 'ul': prefixLine('* '); break;
+            case 'ol': prefixLine('1. '); break;
+        }
+    };
+    
+    return (
+        <div className="markdown-editor-container">
+            <MarkdownToolbar onApply={applyMarkdown} />
+            <textarea
+                id={id}
+                ref={textareaRef}
+                value={value}
+                onChange={onChange}
+                disabled={disabled}
+                rows={rows}
+            />
+        </div>
+    );
+};
+
+const JsonEditor = ({ value, onChange, disabled, t, id }: { value: string, onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void, disabled?: boolean, t: TFunction, id?: string }) => {
+  const [error, setError] = useState('');
+  const preRef = useRef<HTMLPreElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!value.trim()) {
+      setError('');
+      return;
+    }
+    try {
+      JSON.parse(value);
+      setError('');
+    } catch (e) {
+      setError(t('errorInvalidJsonFormat'));
+    }
+  }, [value, t]);
+
+  const handleScroll = () => {
+    if (preRef.current && textareaRef.current) {
+      preRef.current.scrollTop = textareaRef.current.scrollTop;
+      preRef.current.scrollLeft = textareaRef.current.scrollLeft;
+    }
+  };
+
+  const highlightedValue = highlightJsonString(value);
+
+  return (
+    <div className="json-editor-container">
+      <pre ref={preRef} aria-hidden="true">
+        <code dangerouslySetInnerHTML={{ __html: highlightedValue + '\n' }} />
+      </pre>
+      <textarea
+        id={id}
+        ref={textareaRef}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        onScroll={handleScroll}
+        spellCheck="false"
+        aria-invalid={!!error}
+        aria-describedby={error ? `json-error-desc` : undefined}
+      />
+      {error && <p id="json-error-desc" className="json-error" role="alert">{error}</p>}
+    </div>
+  );
+};
+
+
+const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry, onSetSearchTerm, t }: { record: CaseRecord; isExpanded: boolean; onToggle: () => void; onUpdate: (record: CaseRecord) => Promise<void>; onDelete: (id: number) => void; onRetry: (record: CaseRecord, newText?: string) => void; onSetSearchTerm: (term: string) => void; t: TFunction; }) => {
   const { loading, error, analysis, originalText, id } = record;
   const [isEditing, setIsEditing] = useState(false);
+  const [isEditingFromError, setIsEditingFromError] = useState(false);
   const [editedOriginalText, setEditedOriginalText] = useState(originalText);
   const [editedAnalysis, setEditedAnalysis] = useState(JSON.stringify(analysis || {}, null, 2));
   const [jsonError, setJsonError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [copyStatus, setCopyStatus] = useState(t('copyButtonLabel'));
+  const [newTag, setNewTag] = useState('');
 
   useEffect(() => {
     // Reset copy button text if language changes
@@ -1170,6 +1520,7 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
 
   const handleCancel = () => {
     setIsEditing(false);
+    setIsEditingFromError(false);
   };
   
   const handleSave = async () => {
@@ -1205,6 +1556,44 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
     }
   };
 
+  const handleAddTag = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTag.trim() || id === undefined) return;
+
+    const currentTags = record.tags || [];
+    const trimmedTag = newTag.trim();
+    if (currentTags.map(t => t.toLowerCase()).includes(trimmedTag.toLowerCase())) {
+        setNewTag('');
+        return;
+    }
+
+    const updatedRecord: CaseRecord = {
+        ...record,
+        id,
+        tags: [...currentTags, trimmedTag],
+    };
+
+    try {
+        await onUpdate(updatedRecord);
+        setNewTag('');
+    } catch (err) {
+        console.error("Failed to add tag", err);
+    }
+  };
+
+  const handleRemoveTag = async (tagToRemove: string) => {
+    if (id === undefined) return;
+    
+    const updatedTags = (record.tags || []).filter(tag => tag !== tagToRemove);
+    const updatedRecord: CaseRecord = { ...record, id, tags: updatedTags };
+
+    try {
+        await onUpdate(updatedRecord);
+    } catch (err) {
+        console.error("Failed to remove tag", err);
+    }
+  };
+
   if (loading) {
     return (
         <div className="result-card">
@@ -1217,19 +1606,52 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
   }
 
   if (error) {
+    if (isEditingFromError) {
+        return (
+            <div className="result-card editing error-card">
+                <div className="result-card-edit-body">
+                    <h4>{t('editAndRetryButtonLabel')}</h4>
+                    <div className="edit-form-field">
+                        <label htmlFor={`edit-original-text-error-${record.timestamp}`}>{t('originalTextSection')}</label>
+                        <MarkdownEditor
+                            id={`edit-original-text-error-${record.timestamp}`}
+                            value={editedOriginalText}
+                            onChange={(e) => setEditedOriginalText(e.target.value)}
+                            rows={15}
+                        />
+                    </div>
+                    <div className="edit-form-controls">
+                        <button className="cancel-btn" onClick={handleCancel}>{t('cancelButtonLabel')}</button>
+                        <button onClick={() => { onRetry(record, editedOriginalText); setIsEditingFromError(false); }}>
+                            {t('saveAndRetryButtonLabel')}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
       <div className="result-card error-card">
-        <div className="error-card-header">
-          <h3>{t('analysisFailedTitle')}</h3>
-          <button className="retry-btn" onClick={() => onRetry(record)}>
+        <div className="error-card-content">
+          <h3>{error.title}</h3>
+          <p className="error-card-message">{error.message}</p>
+          {error.suggestion && <p className="error-suggestion">{error.suggestion}</p>}
+          {error.raw && (
+            <details>
+              <summary>{t('viewErrorDetails')}</summary>
+              <pre>{error.raw}</pre>
+            </details>
+          )}
+        </div>
+        <div className="error-card-actions">
+          <button className="action-btn" onClick={() => onRetry(record)}>
             {t('retryButtonLabel')}
           </button>
+          <button className="action-btn" onClick={() => { setIsEditingFromError(true); setEditedOriginalText(originalText); }}>
+            {t('editAndRetryButtonLabel')}
+          </button>
         </div>
-        <p className="error-card-message">{error}</p>
-        <details>
-          <summary>{t('originalTextSection')}</summary>
-          <pre>{originalText}</pre>
-        </details>
       </div>
     );
   }
@@ -1243,9 +1665,8 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
           <h4>{t('editingAnalysisTitle')}</h4>
           <div className="edit-form-field">
             <label htmlFor={`edit-original-text-${id}`}>{t('originalTextSection')}</label>
-            <textarea
+            <MarkdownEditor
               id={`edit-original-text-${id}`}
-              className="edit-original-text-area"
               value={editedOriginalText}
               onChange={(e) => setEditedOriginalText(e.target.value)}
               rows={10}
@@ -1254,17 +1675,14 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
           </div>
           <div className="edit-form-field">
             <label htmlFor={`edit-analysis-json-${id}`}>{t('rawDataSection')}</label>
-            <textarea
+            <JsonEditor
               id={`edit-analysis-json-${id}`}
-              className="edit-json-area"
               value={editedAnalysis}
               onChange={(e) => setEditedAnalysis(e.target.value)}
-              rows={20}
-              aria-invalid={!!jsonError}
-              aria-describedby={jsonError ? `json-error-${id}` : undefined}
               disabled={isSaving}
+              t={t}
             />
-            {jsonError && <p id={`json-error-${id}`} className="json-error">{jsonError}</p>}
+            {jsonError && <p className="json-error" role="alert">{jsonError}</p>}
           </div>
           <div className="edit-form-controls">
             <button className="cancel-btn" onClick={handleCancel} disabled={isSaving}>{t('cancelButtonLabel')}</button>
@@ -1368,6 +1786,48 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
                 </div>
               </div>
             )}
+            
+            <div className="result-section">
+                <h4 className="result-section-title">{t('tagsLabel')}</h4>
+                <div className="section-content">
+                    <div className="tags-container">
+                        {(record.tags && record.tags.length > 0) ? (
+                            record.tags.map(tag => (
+                                <span
+                                    key={tag}
+                                    className="tag-item"
+                                    onClick={(e) => { e.stopPropagation(); onSetSearchTerm(tag); }}
+                                    title={t('filterByTagTooltip')}
+                                >
+                                    {tag}
+                                    <button
+                                        className="remove-tag-btn"
+                                        onClick={(e) => { e.stopPropagation(); handleRemoveTag(tag); }}
+                                        aria-label={`Remove tag ${tag}`}
+                                    >
+                                        &times;
+                                    </button>
+                                </span>
+                            ))
+                        ) : (
+                            <p className="no-tags-placeholder">{t('noTagsPlaceholder')}</p>
+                        )}
+                    </div>
+                    <form className="add-tag-form" onSubmit={handleAddTag}>
+                        <input
+                            type="text"
+                            value={newTag}
+                            onChange={(e) => setNewTag(e.target.value)}
+                            placeholder={t('addTagPlaceholder')}
+                            className="add-tag-input"
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                        <button type="submit" className="add-tag-btn" onClick={(e) => e.stopPropagation()}>
+                            {t('addTagButtonLabel')}
+                        </button>
+                    </form>
+                </div>
+            </div>
 
             <div className="result-section">
               <h4 className="result-section-title">{t('originalTextSection')}</h4>
@@ -1389,6 +1849,227 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
       )}
     </div>
   );
+};
+
+// --- ADMIN DASHBOARD COMPONENTS ---
+
+const AdminDashboard = ({ allCases, t }: { allCases: CaseRecord[], t: TFunction }) => {
+    const [activeSection, setActiveSection] = useState('analytics');
+
+    const sections = {
+        analytics: <AnalyticsSection allCases={allCases} t={t} />,
+        users: <UserManagementSection t={t} />,
+        content: <ContentManagementSection t={t} />,
+        security: <SecurityMonitoringSection t={t} />,
+        settings: <ConfigurationSettingsSection t={t} />,
+    };
+
+    return (
+        <div className="admin-dashboard">
+            <aside className="admin-sidebar">
+                <h3>{t('adminDashboardTitle')}</h3>
+                <nav>
+                    <button className={activeSection === 'analytics' ? 'active' : ''} onClick={() => setActiveSection('analytics')}>{t('analyticsSection')}</button>
+                    <button className={activeSection === 'users' ? 'active' : ''} onClick={() => setActiveSection('users')}>{t('userManagementSection')}</button>
+                    <button className={activeSection === 'content' ? 'active' : ''} onClick={() => setActiveSection('content')}>{t('contentManagementSection')}</button>
+                    <button className={activeSection === 'security' ? 'active' : ''} onClick={() => setActiveSection('security')}>{t('securityMonitoringSection')}</button>
+                    <button className={activeSection === 'settings' ? 'active' : ''} onClick={() => setActiveSection('settings')}>{t('configurationSettingsSection')}</button>
+                </nav>
+            </aside>
+            <main className="admin-content">
+                {sections[activeSection as keyof typeof sections]}
+            </main>
+        </div>
+    );
+};
+
+const AnalyticsSection = ({ allCases, t }: { allCases: CaseRecord[], t: TFunction }) => {
+    const { totalCases, casesWithAppeal, analysisErrors, uniqueTags } = useMemo(() => {
+        const successfulCases = allCases.filter(c => !c.loading && !c.error && c.analysis);
+        const tags = new Set<string>();
+        successfulCases.forEach(c => c.tags?.forEach(tag => tags.add(tag)));
+        
+        return {
+            totalCases: successfulCases.length,
+            casesWithAppeal: successfulCases.filter(c => c.analysis?.hasAppeal).length,
+            analysisErrors: allCases.filter(c => !!c.error).length,
+            uniqueTags: tags.size
+        };
+    }, [allCases]);
+
+    const barChartData = useMemo(() => {
+        const successfulCases = allCases.filter(c => !c.loading && !c.error && c.analysis);
+        const labels: string[] = [];
+        const data: number[] = [];
+        const dateMap = new Map<string, number>();
+
+        for (let i = 29; i >= 0; i--) {
+            const date = subDays(new Date(), i);
+            const formattedDate = format(date, 'MMM d');
+            labels.push(formattedDate);
+            dateMap.set(format(startOfDay(date), 'yyyy-MM-dd'), 0);
+        }
+
+        successfulCases.forEach(c => {
+            const caseDate = format(startOfDay(new Date(c.timestamp)), 'yyyy-MM-dd');
+            if (dateMap.has(caseDate)) {
+                dateMap.set(caseDate, (dateMap.get(caseDate) || 0) + 1);
+            }
+        });
+        
+        labels.forEach(label => {
+            // Re-create the key from the label to look up in the map
+            const dateKey = format(startOfDay(new Date(label + ' ' + new Date().getFullYear())), 'yyyy-MM-dd');
+             if(dateMap.has(dateKey)) {
+                data.push(dateMap.get(dateKey)!);
+             }
+        });
+
+        return {
+            labels,
+            datasets: [{
+                label: t('totalCasesAnalyzed'),
+                data,
+                backgroundColor: 'rgba(74, 144, 226, 0.6)',
+                borderColor: 'rgba(74, 144, 226, 1)',
+                borderWidth: 1,
+            }]
+        };
+    }, [allCases, t]);
+
+    const doughnutChartData = useMemo(() => {
+        return {
+            labels: [t('withAppeal'), t('withoutAppeal')],
+            datasets: [{
+                data: [casesWithAppeal, totalCases - casesWithAppeal],
+                backgroundColor: ['#4A90E2', '#d9e7f8'],
+                borderColor: ['#ffffff', '#ffffff'],
+                borderWidth: 2,
+            }]
+        };
+    }, [casesWithAppeal, totalCases, t]);
+
+    return (
+        <div className="analytics-section">
+            <div className="stat-cards-grid">
+                <div className="stat-card"><h4>{t('totalCasesAnalyzed')}</h4><p>{totalCases}</p></div>
+                <div className="stat-card"><h4>{t('casesWithAppeals')}</h4><p>{casesWithAppeal}</p></div>
+                <div className="stat-card"><h4>{t('analysisErrors')}</h4><p>{analysisErrors}</p></div>
+                <div className="stat-card"><h4>{t('totalUniqueTags')}</h4><p>{uniqueTags}</p></div>
+            </div>
+            <div className="charts-grid">
+                <div className="chart-container">
+                    <h3>{t('casesAnalyzedLast30Days')}</h3>
+                    <Bar data={barChartData} options={{ responsive: true, maintainAspectRatio: false }} />
+                </div>
+                <div className="chart-container">
+                    <h3>{t('casesByAppealStatus')}</h3>
+                    <Doughnut data={doughnutChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }} }}/>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const PlaceholderOverlay = ({ t }: { t: TFunction }) => (
+    <div className="placeholder-overlay" title={t('backendRequiredNotice')}>
+        <span>{t('backendRequiredNotice')}</span>
+    </div>
+);
+
+const UserManagementSection = ({ t }: { t: TFunction }) => {
+    return (
+        <div className="admin-placeholder-section">
+            <h2>{t('userManagementSection')}</h2>
+            <div className="placeholder-content">
+                <PlaceholderOverlay t={t} />
+                <div className="placeholder-header">
+                    <h3>Users</h3>
+                    <button disabled>Add New User</button>
+                </div>
+                <table className="placeholder-table">
+                    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr></thead>
+                    <tbody>
+                        <tr><td>Admin User</td><td>admin@example.com</td><td>Admin</td><td><button disabled>Edit</button> <button disabled>Delete</button></td></tr>
+                        <tr><td>Analyst User</td><td>analyst@example.com</td><td>Analyst</td><td><button disabled>Edit</button> <button disabled>Delete</button></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
+const ContentManagementSection = ({ t }: { t: TFunction }) => {
+    return (
+        <div className="admin-placeholder-section">
+            <h2>{t('contentManagementSection')}</h2>
+            <div className="placeholder-content">
+                <PlaceholderOverlay t={t} />
+                <div className="placeholder-header">
+                    <h3>Manage Content</h3>
+                    <button disabled>Add New Article</button>
+                </div>
+                <p>A section for managing articles, guides, or other centralized content would appear here.</p>
+            </div>
+        </div>
+    );
+};
+
+const SecurityMonitoringSection = ({ t }: { t: TFunction }) => {
+    return (
+        <div className="admin-placeholder-section">
+            <h2>{t('securityMonitoringSection')}</h2>
+            <div className="placeholder-content">
+                <PlaceholderOverlay t={t} />
+                <div className="placeholder-header">
+                    <h3>Activity Log</h3>
+                </div>
+                <table className="placeholder-table">
+                    <thead><tr><th>Timestamp</th><th>User</th><th>Action</th><th>Details</th></tr></thead>
+                    <tbody>
+                        <tr><td>2024-07-28 10:30 AM</td><td>admin@example.com</td><td>LOGIN_SUCCESS</td><td>IP: 192.168.1.1</td></tr>
+                        <tr><td>2024-07-28 10:32 AM</td><td>analyst@example.com</td><td>CASE_ANALYZED</td><td>Case ID: 4521</td></tr>
+                        <tr><td>2024-07-28 10:35 AM</td><td>admin@example.com</td><td>USER_DELETED</td><td>User: olduser@example.com</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
+const ConfigurationSettingsSection = ({ t }: { t: TFunction }) => {
+    const [theme, setTheme] = useState(localStorage.getItem('judgment-analyzer-theme') || 'light');
+
+    const handleThemeChange = (e: ChangeEvent<HTMLInputElement>) => {
+        const newTheme = e.target.checked ? 'dark' : 'light';
+        setTheme(newTheme);
+        localStorage.setItem('judgment-analyzer-theme', newTheme);
+        document.documentElement.setAttribute('data-theme', newTheme);
+    };
+    
+    return (
+        <div className="admin-settings-section">
+            <h2>{t('configurationSettingsSection')}</h2>
+            <div className="setting-item">
+                <label htmlFor="theme-switcher">{t('themeLabel')}</label>
+                <div className="theme-switcher">
+                    <span>{t('lightTheme')}</span>
+                    <label className="switch">
+                        <input id="theme-switcher" type="checkbox" checked={theme === 'dark'} onChange={handleThemeChange} />
+                        <span className="slider round"></span>
+                    </label>
+                    <span>{t('darkTheme')}</span>
+                </div>
+            </div>
+            <div className="admin-placeholder-section" style={{marginTop: '2rem'}}>
+                 <div className="placeholder-content">
+                    <PlaceholderOverlay t={t} />
+                    <h3>Integrations</h3>
+                    <p>Configuration for third-party services and API keys would appear here.</p>
+                </div>
+            </div>
+        </div>
+    );
 };
 
 
