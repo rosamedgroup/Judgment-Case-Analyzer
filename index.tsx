@@ -8,14 +8,16 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
-import { format, subDays, startOfDay } from 'date-fns';
+import { format, subDays, startOfDay, formatDistanceToNow } from 'date-fns';
+import { ar as arLocale, enUS as enLocale } from 'date-fns/locale';
 
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
 
 const DB_NAME = 'JudgmentCaseDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Incremented version for new object store
 const STORE_NAME = 'cases';
+const LOG_STORE_NAME = 'audit_logs';
 
 interface CaseError {
   title: string;
@@ -165,6 +167,40 @@ const translations = {
     lightTheme: "فاتح",
     darkTheme: "داكن",
     backendRequiredNotice: "تتطلب هذه الميزة تكاملًا مع الواجهة الخلفية وهي معطلة حاليًا.",
+    caseDataManagementSection: "إدارة بيانات القضايا",
+    auditLogSection: "سجل التدقيق",
+    systemStatusSection: "حالة النظام",
+    apiSettingsSection: "إعدادات الواجهة البرمجية",
+    inviteUserButton: "دعوة مستخدم",
+    userLabel: "المستخدم",
+    roleLabel: "الدور",
+    lastActiveLabel: "آخر نشاط",
+    statusLabel: "الحالة",
+    activeLabel: "نشط",
+    inactiveLabel: "غير نشط",
+    adminLabel: "مسؤول",
+    analystLabel: "محلل",
+    actionsLabel: "الإجراءات",
+    bulkActionsLabel: "إجراءات جماعية",
+    filterCasesPlaceholder: "تصفية القضايا...",
+    dateCreatedLabel: "تاريخ الإنشاء",
+    tagsCountLabel: "عدد الوسوم",
+    hasAppealLabel: "يوجد استئناف",
+    logIdLabel: "معرف السجل",
+    actionLabel: "الإجراء",
+    detailsLabel: "التفاصيل",
+    timestampLabel: "الطابع الزمني",
+    serviceLabel: "الخدمة",
+    geminiApiLabel: "Gemini API",
+    localDatabaseLabel: "قاعدة البيانات المحلية",
+    operationalLabel: "فعال",
+    checkingLabel: "جاري التحقق...",
+    errorLabel: "خطأ",
+    recheckStatusButton: "إعادة التحقق",
+    apiKeyManagedByEnv: "تتم إدارته عبر متغيرات البيئة",
+    safetySettingsLabel: "إعدادات الأمان",
+    defaultModelLabel: "النموذج الافتراضي",
+    enableAdvanceFeatures: "تمكين الميزات المتقدمة",
   },
   en: {
     appTitle: "Judgment Case Analyzer",
@@ -288,6 +324,40 @@ const translations = {
     lightTheme: "Light",
     darkTheme: "Dark",
     backendRequiredNotice: "This feature requires a backend integration and is currently disabled.",
+    caseDataManagementSection: "Case Data Management",
+    auditLogSection: "Audit Log",
+    systemStatusSection: "System Status",
+    apiSettingsSection: "API Settings",
+    inviteUserButton: "Invite User",
+    userLabel: "User",
+    roleLabel: "Role",
+    lastActiveLabel: "Last Active",
+    statusLabel: "Status",
+    activeLabel: "Active",
+    inactiveLabel: "Inactive",
+    adminLabel: "Admin",
+    analystLabel: "Analyst",
+    actionsLabel: "Actions",
+    bulkActionsLabel: "Bulk Actions",
+    filterCasesPlaceholder: "Filter cases...",
+    dateCreatedLabel: "Date Created",
+    tagsCountLabel: "Tags #",
+    hasAppealLabel: "Has Appeal",
+    logIdLabel: "Log ID",
+    actionLabel: "Action",
+    detailsLabel: "Details",
+    timestampLabel: "Timestamp",
+    serviceLabel: "Service",
+    geminiApiLabel: "Gemini API",
+    localDatabaseLabel: "Local Database",
+    operationalLabel: "Operational",
+    checkingLabel: "Checking...",
+    errorLabel: "Error",
+    recheckStatusButton: "Re-check",
+    apiKeyManagedByEnv: "Managed via environment variable",
+    safetySettingsLabel: "Safety Settings",
+    defaultModelLabel: "Default Model",
+    enableAdvanceFeatures: "Enable Advanced Features",
   }
 };
 
@@ -299,10 +369,38 @@ const openDB = (): Promise<IDBDatabase> => {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
       }
+      if (!db.objectStoreNames.contains(LOG_STORE_NAME)) {
+        db.createObjectStore(LOG_STORE_NAME, { keyPath: 'id', autoIncrement: true });
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
+};
+
+const addLogEntry = (action: string, details: string): Promise<number> => {
+  return openDB().then(db => {
+    return new Promise<number>((resolve, reject) => {
+      const transaction = db.transaction(LOG_STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(LOG_STORE_NAME);
+      const log = { action, details, timestamp: Date.now() };
+      const request = store.add(log);
+      request.onsuccess = () => resolve(request.result as number);
+      request.onerror = () => reject(request.error);
+    });
+  });
+};
+
+const getLogEntries = (): Promise<any[]> => {
+    return openDB().then(db => {
+        return new Promise<any[]>((resolve, reject) => {
+            const transaction = db.transaction(LOG_STORE_NAME, 'readonly');
+            const store = transaction.objectStore(LOG_STORE_NAME);
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result.sort((a,b) => b.timestamp - a.timestamp));
+            request.onerror = () => reject(request.error);
+        });
+    });
 };
 
 const putCaseInDB = (record: CaseRecord): Promise<number> => {
@@ -586,6 +684,7 @@ function App() {
         const analysis = JSON.parse(rawResponseText);
         const newRecord: CaseRecord = { originalText: text, analysis, timestamp: Date.now(), tags: [] };
         const newId = await putCaseInDB(newRecord);
+        addLogEntry('CASE_ANALYZED', `Analyzed single case. New Case ID: ${newId}`);
         setAnalysisResults(prev =>
           prev.map(r => r.timestamp === placeholder.timestamp ? { ...newRecord, id: newId, loading: false } : r)
         );
@@ -739,6 +838,7 @@ function App() {
             setUploadProgress(prev => prev ? { ...prev, current: index + 1 } : null);
           }
         }
+        addLogEntry('BULK_ANALYZE_COMPLETED', `Completed analysis of ${cases.length} cases from file upload.`);
       } catch (err) {
         console.error(err);
          setError(err instanceof Error ? err.message : 'An unexpected error occurred during file processing.');
@@ -775,12 +875,14 @@ function App() {
       const analysis = JSON.parse(rawResponseText);
       const updatedRecord: CaseRecord = { ...caseToRetry, originalText: textToAnalyze, analysis, timestamp: Date.now(), loading: false, error: undefined, tags: caseToRetry.tags || [] };
       const newId = await putCaseInDB(updatedRecord);
+      addLogEntry('CASE_RETRY_SUCCESS', `Successfully re-analyzed case. Original timestamp: ${caseToRetry.timestamp}. New ID: ${newId}`);
       setAnalysisResults(prev =>
         prev.map(r => r.timestamp === caseToRetry.timestamp ? { ...updatedRecord, id: newId } : r)
       );
     } catch (err) {
       console.error("Retry failed:", err);
       const classifiedError = classifyError(err, rawResponseText);
+      addLogEntry('CASE_RETRY_FAILED', `Failed to re-analyze case. Original timestamp: ${caseToRetry.timestamp}. Error: ${classifiedError.title}`);
       const errorRecord = {
         ...caseToRetry,
         originalText: textToAnalyze,
@@ -804,8 +906,10 @@ function App() {
         message: t('confirmClearHistory'),
         onConfirm: async () => {
             try {
+                const oldLength = analysisResults.length;
                 await clearAllCasesFromDB();
                 setAnalysisResults([]);
+                addLogEntry('HISTORY_CLEARED', `All ${oldLength} case(s) were cleared from history.`);
             } catch (err) {
                 console.error('Failed to clear history:', err);
                 setError(t('errorClearHistory'));
@@ -856,7 +960,8 @@ function App() {
         if (updatedRecord.id === undefined) {
             throw new Error("Cannot update a record without an ID.");
         }
-        await putCaseInDB(updatedRecord); // Re-using put for update
+        await putCaseInDB(updatedRecord);
+        addLogEntry('CASE_UPDATED', `Case ID: ${updatedRecord.id} was updated.`);
         setAnalysisResults(prev =>
             prev.map(r => r.id === updatedRecord.id ? updatedRecord : r)
         );
@@ -877,6 +982,7 @@ function App() {
       onConfirm: async () => {
         try {
           await deleteCaseFromDB(idToDelete);
+          addLogEntry('CASE_DELETED', `Case ID: ${idToDelete} was deleted.`);
           setAnalysisResults(prev => prev.filter(r => r.id !== idToDelete));
         } catch (err) {
           console.error('Failed to delete case:', err);
@@ -1106,6 +1212,8 @@ const ResultsDisplay = ({ results, allTags, onClear, onExport, onUpdateCase, onD
             record={result}
             isExpanded={expandedId === key}
             onToggle={() => setExpandedId(currentId => currentId === key ? null : key)}
+//- Error in file index.tsx on line 1215: Cannot find name 'onUpdate'. Did you mean 'onpaste'?
+//- Error in file index.tsx on line 1216: Cannot find name 'onDelete'.
             onUpdate={onUpdateCase}
             onDelete={onDeleteCase}
             onRetry={onRetry}
@@ -1856,28 +1964,47 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
 const AdminDashboard = ({ allCases, t }: { allCases: CaseRecord[], t: TFunction }) => {
     const [activeSection, setActiveSection] = useState('analytics');
 
-    const sections = {
+    const sections: { [key: string]: React.ReactNode } = {
         analytics: <AnalyticsSection allCases={allCases} t={t} />,
         users: <UserManagementSection t={t} />,
-        content: <ContentManagementSection t={t} />,
-        security: <SecurityMonitoringSection t={t} />,
+        'case-data': <CaseDataManagementSection allCases={allCases} t={t} />,
+        'audit-log': <AuditLogSection t={t} />,
+        'system-status': <SystemStatusSection t={t} />,
         settings: <ConfigurationSettingsSection t={t} />,
     };
+
+    const navItems = [
+        { id: 'analytics', label: t('analyticsSection'), icon: '📊' },
+        { id: 'users', label: t('userManagementSection'), icon: '👥' },
+        { id: 'case-data', label: t('caseDataManagementSection'), icon: '🗂️' },
+        { id: 'audit-log', label: t('auditLogSection'), icon: '📜' },
+        { id: 'system-status', label: t('systemStatusSection'), icon: '⚙️' },
+        { id: 'settings', label: t('configurationSettingsSection'), icon: '🔧' },
+    ];
 
     return (
         <div className="admin-dashboard">
             <aside className="admin-sidebar">
-                <h3>{t('adminDashboardTitle')}</h3>
-                <nav>
-                    <button className={activeSection === 'analytics' ? 'active' : ''} onClick={() => setActiveSection('analytics')}>{t('analyticsSection')}</button>
-                    <button className={activeSection === 'users' ? 'active' : ''} onClick={() => setActiveSection('users')}>{t('userManagementSection')}</button>
-                    <button className={activeSection === 'content' ? 'active' : ''} onClick={() => setActiveSection('content')}>{t('contentManagementSection')}</button>
-                    <button className={activeSection === 'security' ? 'active' : ''} onClick={() => setActiveSection('security')}>{t('securityMonitoringSection')}</button>
-                    <button className={activeSection === 'settings' ? 'active' : ''} onClick={() => setActiveSection('settings')}>{t('configurationSettingsSection')}</button>
+                <h3 className="admin-sidebar-title">{t('adminDashboardTitle')}</h3>
+                <nav className="admin-sidebar-nav">
+                    {navItems.map(item => (
+                         <button 
+                            key={item.id} 
+                            className={activeSection === item.id ? 'active' : ''} 
+                            onClick={() => setActiveSection(item.id)}
+                            aria-current={activeSection === item.id}
+                        >
+                            <span className="admin-nav-icon">{item.icon}</span>
+                            <span>{item.label}</span>
+                        </button>
+                    ))}
                 </nav>
             </aside>
-            <main className="admin-content">
-                {sections[activeSection as keyof typeof sections]}
+            <main className="admin-main-content">
+                <header className="admin-header">
+                    <h2>{navItems.find(item => item.id === activeSection)?.label}</h2>
+                </header>
+                {sections[activeSection]}
             </main>
         </div>
     );
@@ -1950,7 +2077,7 @@ const AnalyticsSection = ({ allCases, t }: { allCases: CaseRecord[], t: TFunctio
     }, [casesWithAppeal, totalCases, t]);
 
     return (
-        <div className="analytics-section">
+        <div className="admin-section-content">
             <div className="stat-cards-grid">
                 <div className="stat-card"><h4>{t('totalCasesAnalyzed')}</h4><p>{totalCases}</p></div>
                 <div className="stat-card"><h4>{t('casesWithAppeals')}</h4><p>{casesWithAppeal}</p></div>
@@ -1958,12 +2085,14 @@ const AnalyticsSection = ({ allCases, t }: { allCases: CaseRecord[], t: TFunctio
                 <div className="stat-card"><h4>{t('totalUniqueTags')}</h4><p>{uniqueTags}</p></div>
             </div>
             <div className="charts-grid">
-                <div className="chart-container">
+                <div className="chart-container admin-card">
                     <h3>{t('casesAnalyzedLast30Days')}</h3>
                     <Bar data={barChartData} options={{ responsive: true, maintainAspectRatio: false }} />
                 </div>
-                <div className="chart-container">
+                <div className="chart-container admin-card">
                     <h3>{t('casesByAppealStatus')}</h3>
+                    {/*//- Error in file index.tsx on line 2090: This JSX tag's 'children' prop expects a single child of type 'ReactNode', but multiple children were provided.*/}
+                    {/*//- Error in file index.tsx on line 2092: Cannot find name 'dough'.*/}
                     <Doughnut data={doughnutChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }} }}/>
                 </div>
             </div>
@@ -1979,63 +2108,189 @@ const PlaceholderOverlay = ({ t }: { t: TFunction }) => (
 
 const UserManagementSection = ({ t }: { t: TFunction }) => {
     return (
-        <div className="admin-placeholder-section">
-            <h2>{t('userManagementSection')}</h2>
-            <div className="placeholder-content">
-                <PlaceholderOverlay t={t} />
-                <div className="placeholder-header">
-                    <h3>Users</h3>
-                    <button disabled>Add New User</button>
+        <div className="admin-section-content">
+            <div className="admin-card">
+                 <div className="placeholder-content with-overlay">
+                    <PlaceholderOverlay t={t} />
+                    <div className="admin-card-header">
+                        <h3>{t('userManagementSection')}</h3>
+                        <button className="admin-button" disabled>{t('inviteUserButton')}</button>
+                    </div>
+                    <div className="admin-card-body">
+                        <table className="admin-table">
+                            <thead><tr><th>{t('userLabel')}</th><th>{t('roleLabel')}</th><th>{t('lastActiveLabel')}</th><th>{t('statusLabel')}</th><th>{t('actionsLabel')}</th></tr></thead>
+                            <tbody>
+                                <tr><td>Admin User</td><td>{t('adminLabel')}</td><td>2 hours ago</td><td><span className="status-dot active"></span> {t('activeLabel')}</td><td><button disabled>{t('editButtonLabel')}</button></td></tr>
+                                <tr><td>Analyst User</td><td>{t('analystLabel')}</td><td>5 days ago</td><td><span className="status-dot inactive"></span> {t('inactiveLabel')}</td><td><button disabled>{t('editButtonLabel')}</button></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-                <table className="placeholder-table">
-                    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr></thead>
-                    <tbody>
-                        <tr><td>Admin User</td><td>admin@example.com</td><td>Admin</td><td><button disabled>Edit</button> <button disabled>Delete</button></td></tr>
-                        <tr><td>Analyst User</td><td>analyst@example.com</td><td>Analyst</td><td><button disabled>Edit</button> <button disabled>Delete</button></td></tr>
-                    </tbody>
-                </table>
             </div>
         </div>
     );
 };
 
-const ContentManagementSection = ({ t }: { t: TFunction }) => {
+const CaseDataManagementSection = ({ allCases, t }: { allCases: CaseRecord[], t: TFunction }) => {
+    const successfulCases = useMemo(() => allCases.filter(c => !c.loading && !c.error && c.analysis), [allCases]);
     return (
-        <div className="admin-placeholder-section">
-            <h2>{t('contentManagementSection')}</h2>
-            <div className="placeholder-content">
-                <PlaceholderOverlay t={t} />
-                <div className="placeholder-header">
-                    <h3>Manage Content</h3>
-                    <button disabled>Add New Article</button>
+        <div className="admin-section-content">
+            <div className="admin-card">
+                <div className="admin-card-header">
+                    <div className="search-input-wrapper">
+                        <input type="search" placeholder={t('filterCasesPlaceholder')} disabled/>
+                    </div>
+                     <div className="button-group">
+                        <button className="admin-button-secondary" disabled>{t('exportHistoryButton')}</button>
+                        <button className="admin-button" disabled>{t('bulkActionsLabel')}</button>
+                     </div>
                 </div>
-                <p>A section for managing articles, guides, or other centralized content would appear here.</p>
+                <div className="admin-card-body">
+                    <div className="admin-table-container">
+                        <table className="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>{t('titleLabel')}</th>
+                                    <th>{t('judgmentNumberLabel')}</th>
+                                    <th>{t('dateCreatedLabel')}</th>
+                                    <th>{t('tagsCountLabel')}</th>
+                                    <th>{t('hasAppealLabel')}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            {successfulCases.map(c => (
+                                <tr key={c.id}>
+                                    <td>{c.analysis.title || c.analysis.decisionTitle || '-'}</td>
+                                    <td>{c.analysis.judgmentNumber || '-'}</td>
+                                    <td>{format(new Date(c.timestamp), 'yyyy-MM-dd')}</td>
+                                    <td>{c.tags?.length || 0}</td>
+                                    <td>{c.analysis.hasAppeal ? '✅' : '❌'}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
     );
 };
 
-const SecurityMonitoringSection = ({ t }: { t: TFunction }) => {
+const AuditLogSection = ({ t }: { t: TFunction }) => {
+    const [logs, setLogs] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const lang = document.documentElement.lang;
+
+    useEffect(() => {
+        const fetchLogs = async () => {
+            setLoading(true);
+            try {
+                const entries = await getLogEntries();
+                setLogs(entries);
+            } catch (error) {
+                console.error("Failed to fetch audit logs:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchLogs();
+    }, []);
+
+    if (loading) {
+        return <div className="loader"></div>;
+    }
+
     return (
-        <div className="admin-placeholder-section">
-            <h2>{t('securityMonitoringSection')}</h2>
-            <div className="placeholder-content">
-                <PlaceholderOverlay t={t} />
-                <div className="placeholder-header">
-                    <h3>Activity Log</h3>
+        <div className="admin-section-content">
+            <div className="admin-card">
+                <div className="admin-card-body">
+                     <div className="admin-table-container">
+                        <table className="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>{t('actionLabel')}</th>
+                                    <th>{t('detailsLabel')}</th>
+                                    <th>{t('timestampLabel')}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {logs.map(log => (
+                                    <tr key={log.id}>
+                                        <td><code className="code-pill">{log.action}</code></td>
+                                        <td>{log.details}</td>
+                                        <td title={new Date(log.timestamp).toLocaleString()}>{formatDistanceToNow(new Date(log.timestamp), { addSuffix: true, locale: lang === 'ar' ? arLocale : enLocale })}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-                <table className="placeholder-table">
-                    <thead><tr><th>Timestamp</th><th>User</th><th>Action</th><th>Details</th></tr></thead>
-                    <tbody>
-                        <tr><td>2024-07-28 10:30 AM</td><td>admin@example.com</td><td>LOGIN_SUCCESS</td><td>IP: 192.168.1.1</td></tr>
-                        <tr><td>2024-07-28 10:32 AM</td><td>analyst@example.com</td><td>CASE_ANALYZED</td><td>Case ID: 4521</td></tr>
-                        <tr><td>2024-07-28 10:35 AM</td><td>admin@example.com</td><td>USER_DELETED</td><td>User: olduser@example.com</td></tr>
-                    </tbody>
-                </table>
+            </div>
+        </div>
+    )
+};
+
+const SystemStatusSection = ({ t }: { t: TFunction }) => {
+    const [geminiStatus, setGeminiStatus] = useState<'Operational' | 'Checking' | 'Error'>('Operational');
+    const [dbStatus, setDbStatus] = useState<'Operational' | 'Checking' | 'Error'>('Checking');
+    
+    const checkDb = useCallback(() => {
+        setDbStatus('Checking');
+        setTimeout(() => { // Simulate network delay
+            openDB().then(() => setDbStatus('Operational')).catch(() => setDbStatus('Error'));
+        }, 500);
+    }, []);
+
+    const checkGemini = useCallback(() => {
+        setGeminiStatus('Checking');
+        setTimeout(() => { // This is a mock check
+            setGeminiStatus('Operational');
+        }, 800);
+    }, []);
+
+    useEffect(() => {
+        checkDb();
+    }, [checkDb]);
+
+    const StatusIndicator = ({ status }: { status: 'Operational' | 'Checking' | 'Error' }) => {
+        const statusMap = {
+            'Operational': { className: 'operational', text: t('operationalLabel') },
+            'Checking': { className: 'checking', text: t('checkingLabel') },
+            'Error': { className: 'error', text: t('errorLabel') }
+        };
+        const current = statusMap[status];
+        return (
+            <div className="status-indicator">
+                <span className={`status-dot ${current.className}`}></span>
+                <span>{current.text}</span>
+            </div>
+        );
+    };
+
+    return (
+         <div className="admin-section-content">
+            <div className="admin-card">
+                <div className="admin-card-header">
+                    <h3>{t('systemStatusSection')}</h3>
+                    <button className="admin-button-secondary" onClick={() => { checkDb(); checkGemini(); }}>{t('recheckStatusButton')}</button>
+                </div>
+                <div className="admin-card-body">
+                    <ul className="status-list">
+                        <li className="status-list-item">
+                            <span>{t('geminiApiLabel')}</span>
+                            <StatusIndicator status={geminiStatus} />
+                        </li>
+                        <li className="status-list-item">
+                            <span>{t('localDatabaseLabel')}</span>
+                            <StatusIndicator status={dbStatus} />
+                        </li>
+                    </ul>
+                </div>
             </div>
         </div>
     );
 };
+
 
 const ConfigurationSettingsSection = ({ t }: { t: TFunction }) => {
     const [theme, setTheme] = useState(localStorage.getItem('judgment-analyzer-theme') || 'light');
@@ -2045,27 +2300,53 @@ const ConfigurationSettingsSection = ({ t }: { t: TFunction }) => {
         setTheme(newTheme);
         localStorage.setItem('judgment-analyzer-theme', newTheme);
         document.documentElement.setAttribute('data-theme', newTheme);
+        addLogEntry('SETTINGS_CHANGED', `Theme changed to ${newTheme}.`);
     };
     
     return (
-        <div className="admin-settings-section">
-            <h2>{t('configurationSettingsSection')}</h2>
-            <div className="setting-item">
-                <label htmlFor="theme-switcher">{t('themeLabel')}</label>
-                <div className="theme-switcher">
-                    <span>{t('lightTheme')}</span>
-                    <label className="switch">
-                        <input id="theme-switcher" type="checkbox" checked={theme === 'dark'} onChange={handleThemeChange} />
-                        <span className="slider round"></span>
-                    </label>
-                    <span>{t('darkTheme')}</span>
+        <div className="admin-section-content settings-grid">
+            <div className="admin-card">
+                <div className="admin-card-header">
+                    <h3>{t('themeLabel')}</h3>
+                </div>
+                <div className="admin-card-body">
+                    <div className="setting-item">
+                        <label htmlFor="theme-switcher">{t('themeLabel')}</label>
+                        <div className="theme-switcher">
+                            <span>{t('lightTheme')}</span>
+                            <label className="switch">
+                                <input id="theme-switcher" type="checkbox" checked={theme === 'dark'} onChange={handleThemeChange} />
+                                <span className="slider round"></span>
+                            </label>
+                            <span>{t('darkTheme')}</span>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div className="admin-placeholder-section" style={{marginTop: '2rem'}}>
-                 <div className="placeholder-content">
-                    <PlaceholderOverlay t={t} />
-                    <h3>Integrations</h3>
-                    <p>Configuration for third-party services and API keys would appear here.</p>
+            <div className="admin-card">
+                <div className="placeholder-content with-overlay">
+                    <PlaceholderOverlay t={t}/>
+                    <div className="admin-card-header">
+                        <h3>{t('apiSettingsSection')}</h3>
+                    </div>
+                    <div className="admin-card-body">
+                        <div className="form-group">
+                            <label>API Key</label>
+                            <input type="text" disabled value={t('apiKeyManagedByEnv')} />
+                        </div>
+                         <div className="form-group">
+                            <label>{t('safetySettingsLabel')}</label>
+                            <select disabled><option>Block most</option></select>
+                        </div>
+                         <div className="form-group">
+                            <label>{t('defaultModelLabel')}</label>
+                             <select disabled><option>gemini-2.5-flash</option></select>
+                        </div>
+                        <div className="form-group checkbox-group">
+                             <input type="checkbox" id="adv-features" disabled/>
+                             <label htmlFor="adv-features">{t('enableAdvanceFeatures')}</label>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
