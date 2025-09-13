@@ -3,21 +3,31 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import { GoogleGenAI, Type } from '@google/genai';
-import { useState, FormEvent, ChangeEvent, useEffect, useMemo, useCallback, useRef, MouseEvent } from 'react';
+// FIX: Add React default import to fix numerous "Cannot find namespace 'React'" errors and the related "key" prop error.
+import React, { useState, FormEvent, ChangeEvent, useEffect, useMemo, useCallback, useRef, MouseEvent } from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
-import { format, subDays, startOfDay, formatDistanceToNow } from 'date-fns';
-import { ar as arLocale, enUS as enLocale } from 'date-fns/locale';
+// FIX: Changed date-fns imports to be modular to resolve "no exported member" errors for subDays, startOfDay, and enUS.
+// This is a common pattern for specific versions of date-fns or with certain bundler configurations.
+// FIX: Changed date-fns imports for format and formatDistanceToNow to be modular to resolve "no exported member" errors.
+import format from 'date-fns/format';
+import formatDistanceToNow from 'date-fns/formatDistanceToNow';
+import subDays from 'date-fns/subDays';
+import startOfDay from 'date-fns/startOfDay';
+import { default as arLocale } from 'date-fns/locale/ar';
+import { default as enLocale } from 'date-fns/locale/en-US';
 
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
 
 const DB_NAME = 'JudgmentCaseDB';
-const DB_VERSION = 2; // Incremented version for new object store
+const DB_VERSION = 3; // Incremented version for new object store
 const STORE_NAME = 'cases';
 const LOG_STORE_NAME = 'audit_logs';
+const SCHEMA_STORE_NAME = 'schema_store';
+
 
 interface CaseError {
   title: string;
@@ -91,8 +101,8 @@ const translations = {
     errorInvalidFile: "يرجى تحميل ملفات JSON أو JSONL أو TXT أو MD صالحة.",
     errorFailedAnalysis: "فشل تحليل القضية. يرجى مراجعة وحدة التحكم لمزيد من التفاصيل.",
     errorEmptyFile: "أحد الملفات التي تم تحميلها فارغ.",
-    errorInvalidJsonl: "تنسيق JSONL غير صالح. يجب أن يكون كل سطر عبارة عن كائن JSON صالح.",
-    errorJsonNotArray: "يجب أن يكون ملف JSON مصفوفة من العناصر.",
+    errorInvalidJsonl: "تنسيق JSONL غير صالح: يجب أن يكون كل سطر عبارة عن كائن JSON صالح.",
+    errorJsonNotArray: "تنسيق JSON غير صالح: يجب أن يحتوي الملف على مصفوفة من عناصر القضايا.",
     errorInvalidJson: "تنسيق JSON غير صالح. يرجى التحقق من محتوى الملف.",
     errorFileNotArray: "الملف الذي تم تحليله لم ينتج عنه مصفوفة من القضايا.",
     errorFileNoCases: "لا تحتوي الملفات على أي قضايا لتحليلها.",
@@ -120,6 +130,9 @@ const translations = {
     copiedButtonLabel: 'تم النسخ!',
     confirmButtonLabel: 'تأكيد',
     analyzingCasesProgress: (current: number, total: number) => `جاري تحليل القضية ${current} من ${total}...`,
+    parsingFileProgress: (current: number, total: number) => `جاري معالجة الملف ${current} من ${total}...`,
+    errorUploadFailedTitle: "فشل الرفع",
+    errorUploadFailedMessage: (filename: string) => `تعذر رفع الملف: ${filename}`,
     filesSelected: (count: number) => {
       if (count === 1) return `تم تحديد ملف واحد`;
       if (count === 2) return `تم تحديد ملفين`;
@@ -144,6 +157,9 @@ const translations = {
     errorApiMessage: "حدث خطأ أثناء الاتصال بخدمة التحليل.",
     errorApiSuggestion: "قد يكون النص المدخل غير صالح أو ينتهك سياسات السلامة. حاول تبسيط النص. انظر التفاصيل أدناه.",
     errorGenericSuggestion: "يمكنك إعادة محاولة التحليل، أو تعديل النص الأصلي إذا كنت تشك في أنه قد يكون سبب المشكلة.",
+    errorTokenLimitTitle: 'تم تجاوز حد الرموز',
+    errorTokenLimitMessage: 'مستند أو قضية واحدة كبيرة جدًا بحيث لا يمكن تحليلها بواسطة الواجهة البرمجية.',
+    errorTokenLimitSuggestion: 'يرجى تقسيم المستند الكبير إلى ملفات أو أجزاء أصغر والمحاولة مرة أخرى.',
     viewErrorDetails: "عرض تفاصيل الخطأ",
     editAndRetryButtonLabel: "تعديل وإعادة المحاولة",
     saveAndRetryButtonLabel: "حفظ وإعادة المحاولة",
@@ -201,6 +217,29 @@ const translations = {
     safetySettingsLabel: "إعدادات الأمان",
     defaultModelLabel: "النموذج الافتراضي",
     enableAdvanceFeatures: "تمكين الميزات المتقدمة",
+    addTagsButtonLabel: 'إضافة وسوم',
+    deleteSelectedButtonLabel: 'حذف المحدد',
+    casesSelected: (count: number) => `تم تحديد ${count} قضية`,
+    addTagsToSelectedTitle: 'إضافة وسوم إلى القضايا المحددة',
+    tagsToAddPlaceholder: 'أدخل الوسوم، مفصولة بفواصل...',
+    confirmBulkDeleteTitle: 'تأكيد الحذف الجماعي',
+    confirmBulkDeleteMessage: (count: number) => `هل أنت متأكد أنك تريد حذف ${count} من القضايا المحددة؟ لا يمكن التراجع عن هذا الإجراء.`,
+    selectAllLabel: 'تحديد الكل',
+    errorBulkDelete: 'فشل حذف القضايا المحددة.',
+    errorBulkUpdate: 'فشل تحديث القضايا المحددة.',
+    schemaSettingsSection: "إعدادات المخطط",
+    schemaDescription: "حدد بنية البيانات التي سيستخرجها Gemini. قم بتعيين حقل واحد أو أكثر كمفتاح أساسي لتعريف الحالات بشكل فريد.",
+    fieldNameLabel: "اسم الحقل",
+    fieldTypeLabel: "النوع",
+    descriptionLabel: "الوصف",
+    primaryKeyLabel: "مفتاح أساسي",
+    nullableLabel: "قابل للإلغاء",
+    addFieldButton: "إضافة حقل",
+    saveSchemaButton: "حفظ المخطط",
+    savingSchemaButton: "جاري الحفظ...",
+    schemaSavedSuccess: "تم حفظ المخطط بنجاح.",
+    errorSavingSchema: "فشل حفظ المخطط.",
+    errorLoadSchema: "فشل تحميل المخطط المخصص.",
   },
   en: {
     appTitle: "Judgment Case Analyzer",
@@ -253,8 +292,8 @@ const translations = {
     errorInvalidFile: 'Please upload valid JSON, JSONL, TXT, or MD files.',
     errorFailedAnalysis: 'Failed to analyze the case. Please check the console for more details.',
     errorEmptyFile: 'An uploaded file is empty.',
-    errorInvalidJsonl: 'Invalid JSONL format. Each line must be a valid JSON object.',
-    errorJsonNotArray: 'JSON file must be an array of items.',
+    errorInvalidJsonl: 'Invalid JSONL format: Each line must be a valid JSON object.',
+    errorJsonNotArray: 'Invalid JSON format: The file should contain an array of case objects.',
     errorInvalidJson: 'Invalid JSON format. Please check the file content.',
     errorFileNotArray: 'The parsed file did not result in an array of cases.',
     errorFileNoCases: 'The files contain no cases to analyze.',
@@ -282,6 +321,9 @@ const translations = {
     copiedButtonLabel: 'Copied!',
     confirmButtonLabel: 'Confirm',
     analyzingCasesProgress: (current: number, total: number) => `Analyzing case ${current} of ${total}...`,
+    parsingFileProgress: (current: number, total: number) => `Parsing file ${current} of ${total}...`,
+    errorUploadFailedTitle: "Upload Failed",
+    errorUploadFailedMessage: (filename: string) => `Could not upload file: ${filename}`,
     filesSelected: (count: number) => `${count} file${count === 1 ? '' : 's'} selected`,
     retryButtonLabel: 'Retry',
     tagsLabel: 'Tags',
@@ -301,6 +343,9 @@ const translations = {
     errorApiMessage: "An error occurred while communicating with the analysis service.",
     errorApiSuggestion: "The input text might be invalid or violate safety policies. Try simplifying the text. See details below.",
     errorGenericSuggestion: "You can retry the analysis, or edit the original text if you suspect it may be causing the issue.",
+    errorTokenLimitTitle: 'Token Limit Exceeded',
+    errorTokenLimitMessage: 'A single document or case is too large to be analyzed by the API.',
+    errorTokenLimitSuggestion: 'Please split the oversized document into smaller files or parts and try again.',
     viewErrorDetails: "View Error Details",
     editAndRetryButtonLabel: "Edit & Retry",
     saveAndRetryButtonLabel: "Save & Retry",
@@ -358,6 +403,29 @@ const translations = {
     safetySettingsLabel: "Safety Settings",
     defaultModelLabel: "Default Model",
     enableAdvanceFeatures: "Enable Advanced Features",
+    addTagsButtonLabel: 'Add Tags',
+    deleteSelectedButtonLabel: 'Delete Selected',
+    casesSelected: (count: number) => `${count} case${count === 1 ? '' : 's'} selected`,
+    addTagsToSelectedTitle: 'Add Tags to Selected Cases',
+    tagsToAddPlaceholder: 'Enter tags, comma-separated...',
+    confirmBulkDeleteTitle: 'Confirm Bulk Deletion',
+    confirmBulkDeleteMessage: (count: number) => `Are you sure you want to delete ${count} selected case${count === 1 ? '' : 's'}? This action cannot be undone.`,
+    selectAllLabel: 'Select all',
+    errorBulkDelete: 'Failed to delete selected cases.',
+    errorBulkUpdate: 'Failed to update selected cases.',
+    schemaSettingsSection: "Schema Settings",
+    schemaDescription: "Define the data structure for Gemini to extract. Designate one or more fields as a Primary Key to uniquely identify cases.",
+    fieldNameLabel: "Field Name",
+    fieldTypeLabel: "Type",
+    descriptionLabel: "Description",
+    primaryKeyLabel: "Primary Key",
+    nullableLabel: "Nullable",
+    addFieldButton: "Add Field",
+    saveSchemaButton: "Save Schema",
+    savingSchemaButton: "Saving...",
+    schemaSavedSuccess: "Schema saved successfully.",
+    errorSavingSchema: "Failed to save schema.",
+    errorLoadSchema: "Failed to load custom schema.",
   }
 };
 
@@ -371,6 +439,9 @@ const openDB = (): Promise<IDBDatabase> => {
       }
       if (!db.objectStoreNames.contains(LOG_STORE_NAME)) {
         db.createObjectStore(LOG_STORE_NAME, { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains(SCHEMA_STORE_NAME)) {
+        db.createObjectStore(SCHEMA_STORE_NAME, { keyPath: 'id' });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -427,6 +498,35 @@ const deleteCaseFromDB = (id: number): Promise<void> => {
   });
 };
 
+const bulkDeleteCasesFromDB = (ids: number[]): Promise<void> => {
+  return openDB().then(db => {
+    return new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      ids.forEach(id => {
+        store.delete(id);
+      });
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+  });
+};
+
+const bulkUpdateCasesInDB = (updates: Map<number, CaseRecord>): Promise<void> => {
+    return openDB().then(db => {
+        return new Promise<void>((resolve, reject) => {
+            const transaction = db.transaction(STORE_NAME, 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            
+            updates.forEach(record => {
+                store.put(record);
+            });
+
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+        });
+    });
+};
 
 const getAllCasesFromDB = (): Promise<CaseRecord[]> => {
   return openDB().then(db => {
@@ -452,8 +552,40 @@ const clearAllCasesFromDB = (): Promise<void> => {
   });
 };
 
+interface EditableSchemaField {
+  name: string;
+  type: Type;
+  description: string;
+  isPrimaryKey: boolean;
+  nullable: boolean;
+}
+type EditableSchema = EditableSchemaField[];
 
-const schema = {
+const getCustomSchemaFromDB = (): Promise<EditableSchema | null> => {
+    return openDB().then(db => {
+        return new Promise<EditableSchema | null>((resolve, reject) => {
+            const transaction = db.transaction(SCHEMA_STORE_NAME, 'readonly');
+            const store = transaction.objectStore(SCHEMA_STORE_NAME);
+            const request = store.get('custom_schema');
+            request.onsuccess = () => resolve(request.result?.schema || null);
+            request.onerror = () => reject(request.error);
+        });
+    });
+};
+
+const putCustomSchemaInDB = (schema: EditableSchema): Promise<void> => {
+    return openDB().then(db => {
+        return new Promise<void>((resolve, reject) => {
+            const transaction = db.transaction(SCHEMA_STORE_NAME, 'readwrite');
+            const store = transaction.objectStore(SCHEMA_STORE_NAME);
+            const request = store.put({ id: 'custom_schema', schema });
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    });
+};
+
+const DEFAULT_GEMINI_SCHEMA = {
   type: Type.OBJECT,
   properties: {
     id: { type: Type.STRING, description: 'The ID of the case.', nullable: true },
@@ -494,7 +626,130 @@ const schema = {
   }
 };
 
+const convertGeminiSchemaToEditable = (geminiSchema: typeof DEFAULT_GEMINI_SCHEMA): EditableSchema => {
+    return Object.entries(geminiSchema.properties).map(([name, props]) => ({
+        name,
+        type: props.type as Type,
+        description: props.description || '',
+        isPrimaryKey: ['title', 'judgmentNumber'].includes(name), // Default PKs
+        nullable: props.nullable || false,
+    }));
+};
+
+const convertEditableSchemaToGemini = (editableSchema: EditableSchema) => {
+    const properties = editableSchema.reduce((acc, field) => {
+        if (field.name.trim()) {
+            acc[field.name.trim()] = {
+                type: field.type,
+                description: field.description,
+                nullable: field.nullable
+            };
+            if (field.type === Type.ARRAY) {
+                // A sensible default for arrays
+                (acc[field.name.trim()] as any).items = { type: Type.STRING };
+            }
+        }
+        return acc;
+    }, {} as any);
+
+    return {
+        type: Type.OBJECT,
+        properties
+    };
+};
+
+const DEFAULT_EDITABLE_SCHEMA = convertGeminiSchemaToEditable(DEFAULT_GEMINI_SCHEMA);
+
 type TFunction = (key: TranslationKey, ...args: any[]) => string;
+
+const parseFile = async (file: File, t: TFunction): Promise<string[]> => {
+    const text = await file.text();
+    if (!text.trim()) {
+        throw new Error(t('errorEmptyFile'));
+    }
+    const lowerCaseName = file.name.toLowerCase();
+
+    const extractText = (item: any): string => {
+        if (typeof item === 'string') return item;
+        if (typeof item === 'object' && item !== null) {
+            if (item.text && typeof item.text === 'string') return item.text;
+            if (item.content && typeof item.content === 'string') return item.content;
+            if (item.body && typeof item.body === 'string') return item.body;
+            // Fallback for objects without a clear text field
+            return JSON.stringify(item); 
+        }
+        return String(item);
+    };
+
+    if (lowerCaseName.endsWith('.json')) {
+        try {
+            const data = JSON.parse(text);
+            if (!Array.isArray(data)) {
+                throw new Error(t('errorJsonNotArray'));
+            }
+            const cases = data.map(extractText).filter(c => c.trim());
+            if (cases.length === 0) throw new Error(t('errorFileNoCases'));
+            return cases;
+        } catch (e) {
+            if (e instanceof Error && (e.message === t('errorJsonNotArray') || e.message === t('errorFileNoCases'))) {
+                throw e; // Re-throw our specific logical errors
+            }
+            // Standard parsing failed. This is often due to a JSONL-style file (multiple root objects)
+            // being saved with a .json extension. We'll try to fix it.
+            console.warn("Standard JSON parsing failed. Attempting to fix by treating as a stream of objects.", e);
+            try {
+                // This regex finds a closing brace, followed by optional whitespace/newlines,
+                // and then an opening brace, and inserts a comma between them. This can fix
+                // both single-line and multi-line object streams.
+                const fixedText = `[${text.trim().replace(/}\s*{/g, '},{')}]`;
+                const data = JSON.parse(fixedText);
+
+                // The result of the fix should be an array.
+                if (!Array.isArray(data)) throw new Error(t('errorJsonNotArray'));
+                
+                const cases = data.map(extractText).filter(c => c.trim());
+                if (cases.length === 0) throw new Error(t('errorFileNoCases'));
+                return cases; // Fix succeeded
+            } catch (fixError) {
+                // If the fix also fails, the file is genuinely malformed.
+                console.error("Attempt to fix JSON structure also failed.", fixError);
+                throw new Error(t('errorInvalidJson'));
+            }
+        }
+    } else if (lowerCaseName.endsWith('.jsonl')) {
+        try {
+            // A JSONL file is a stream of JSON objects. The most robust way to parse this,
+            // including pretty-printed objects, is to wrap it as a JSON array.
+            const fixedText = `[${text.trim().replace(/}\s*{/g, '},{')}]`;
+            const data = JSON.parse(fixedText);
+
+            if (!Array.isArray(data)) {
+                // This would be very unusual for a JSONL file but is a good safeguard.
+                throw new Error(t('errorInvalidJsonl'));
+            }
+            
+            const cases = data.map(extractText).filter(c => c.trim());
+            if (cases.length === 0) throw new Error(t('errorFileNoCases'));
+            return cases;
+        } catch (e) {
+             console.error("JSONL parsing error:", e);
+             throw new Error(t('errorInvalidJsonl'));
+        }
+    } else if (lowerCaseName.endsWith('.txt') || lowerCaseName.endsWith('.md')) {
+        // Split by a clear separator: --- on its own line, or 3+ newlines.
+        const cases = text.split(/\n\s*---\s*\n|\n{3,}/);
+        const filteredCases = cases.filter(c => c.trim());
+        // If no separators are found, the split will result in a single item array.
+        // This is valid for single-case text files.
+        if (filteredCases.length === 0) {
+             // This case happens if the file only contains separators or whitespace.
+             throw new Error(t('errorFileNoCases'));
+        }
+        return filteredCases;
+    }
+
+    return [text]; // Fallback for other allowed extensions
+};
 
 const ConfirmationDialog = ({ isOpen, title, message, onConfirm, onCancel, t }: {
     isOpen: boolean;
@@ -525,6 +780,7 @@ function App() {
   const [caseText, setCaseText] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<FileList | null>(null);
   const [analysisResults, setAnalysisResults] = useState<CaseRecord[]>([]);
+  const [schema, setSchema] = useState<EditableSchema>(DEFAULT_EDITABLE_SCHEMA);
   const [loading, setLoading] = useState(false);
   const [dbLoading, setDbLoading] = useState(true);
   const [error, setError] = useState('');
@@ -537,7 +793,8 @@ function App() {
     message: string;
     onConfirm: (() => void) | null;
   }>({ isOpen: false, title: '', message: '', onConfirm: null });
-  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; step: 'parsing' | 'analyzing' } | null>(null);
+  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [view, setView] = useState<'app' | 'admin'>('app');
 
   useEffect(() => {
@@ -551,6 +808,59 @@ function App() {
     document.documentElement.lang = language;
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
   }, [language]);
+  
+
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+        const registerServiceWorker = () => {
+            const path = window.location.pathname;
+            const scope = path.substring(0, path.lastIndexOf('/') + 1);
+            const swUrl = scope + 'service-worker.js';
+
+            navigator.serviceWorker.register(swUrl, { type: 'module' })
+                .then(registration => {
+                    console.log('ServiceWorker registration successful');
+
+                    const initWorker = () => {
+                        if (navigator.serviceWorker.controller) {
+                            navigator.serviceWorker.controller.postMessage({
+                                type: 'INIT_ANALYZER',
+                                payload: { apiKey: process.env.API_KEY }
+                            });
+                        }
+                    };
+
+                    if (navigator.serviceWorker.controller) {
+                        initWorker();
+                    } else {
+                        navigator.serviceWorker.addEventListener('controllerchange', initWorker, { once: true });
+                    }
+                })
+                .catch(err => console.error('ServiceWorker registration failed: ', err));
+        };
+
+        // Defer registration until after the page has loaded to avoid "invalid state" errors.
+        window.addEventListener('load', registerServiceWorker);
+
+        const handleMessage = (event: MessageEvent) => {
+            const { type, payload } = event.data;
+            if (type === 'ANALYSIS_PROGRESS') {
+                const { record, placeholderTimestamp } = payload;
+                setAnalysisResults(prev => prev.map(r => (r.timestamp === placeholderTimestamp ? record : r)));
+                setUploadProgress(prev => prev ? ({ ...prev, current: prev.current + 1 }) : null);
+            } else if (type === 'ANALYSIS_COMPLETE') {
+                resetUploadState();
+            }
+        };
+        navigator.serviceWorker.addEventListener('message', handleMessage);
+
+        return () => {
+            window.removeEventListener('load', registerServiceWorker);
+            navigator.serviceWorker.removeEventListener('message', handleMessage);
+        };
+    }
+  }, []); // Should only run once
+
 
   const t = useCallback((key: TranslationKey, ...args: any[]) => {
     const lang = language as 'ar' | 'en';
@@ -562,19 +872,37 @@ function App() {
   }, [language]);
 
   useEffect(() => {
-    const loadHistory = async () => {
+    const loadData = async () => {
+      setDbLoading(true);
       try {
-        const history = await getAllCasesFromDB();
+        const [history, customSchema] = await Promise.all([
+          getAllCasesFromDB(),
+          getCustomSchemaFromDB()
+        ]);
         setAnalysisResults(history);
+        if (customSchema) {
+          setSchema(customSchema);
+        }
       } catch (err) {
-        console.error("Failed to load history from DB:", err);
+        console.error("Failed to load data from DB:", err);
         setError(t('errorLoadHistory'));
       } finally {
         setDbLoading(false);
       }
     };
-    loadHistory();
+    loadData();
   }, [t]);
+  
+  const handleSchemaUpdate = async (newSchema: EditableSchema) => {
+    try {
+      await putCustomSchemaInDB(newSchema);
+      setSchema(newSchema);
+      addLogEntry('SCHEMA_UPDATED', `Custom schema was updated with ${newSchema.length} fields.`);
+    } catch (err) {
+        console.error("Failed to save schema", err);
+        throw err;
+    }
+  };
   
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -596,14 +924,16 @@ function App() {
     }
   };
 
-  const resetUploadState = () => {
+  const resetUploadState = useCallback(() => {
     setLoading(false);
+    setIsBatchProcessing(false);
     setUploadedFiles(null);
+    setUploadProgress(null);
     const fileInput = document.getElementById('file-upload') as HTMLInputElement;
     if (fileInput) fileInput.value = '';
-  }
+  }, []);
 
-  const classifyError = (err: any, rawResponse?: string): CaseError => {
+  const classifyError = (err: unknown, rawResponse?: string): CaseError => {
     if (err instanceof SyntaxError) {
         return {
             title: t('errorParsingTitle'),
@@ -628,8 +958,19 @@ function App() {
             message: t('errorApiKeyMessage'),
         };
     }
+
+    if (/input token count exceeds/i.test(errorMessage)) {
+      return {
+          title: t('errorTokenLimitTitle'),
+          message: t('errorTokenLimitMessage'),
+          suggestion: t('errorTokenLimitSuggestion'),
+          raw: errorMessage,
+      };
+    }
     
-    if (errorMessage.includes('[400') || err.name === 'GoogleGenerativeAIError') {
+    // FIX: Correctly check for a Google API error by casting the 'unknown' error object to 'any', allowing safe access to the 'name' property for comparison.
+    const isGoogleApiError = typeof err === 'object' && err !== null && 'name' in err && (err as any).name === 'GoogleGenerativeAIError';
+    if (errorMessage.includes('[400') || isGoogleApiError) {
          return {
             title: t('errorApiTitle'),
             message: t('errorApiMessage'),
@@ -653,231 +994,159 @@ function App() {
       if (activeTab !== 'input') setActiveTab('input');
       return;
     }
-    setLoading(true);
+    
     setError('');
 
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-    const analyzeSingleCase = async (text: string) => {
-      const placeholder: CaseRecord = {
-        originalText: text,
-        timestamp: Date.now(),
-        loading: true,
-      };
-
-      setAnalysisResults(prev => [placeholder, ...prev]);
-      setActiveTab('history');
-      setCaseText('');
-      
-      let rawResponseText: string | undefined;
-      try {
-        const prompt = `Analyze the following legal case text from Saudi Arabia and extract the specified information in JSON format. For the 'judgmentFacts', 'judgmentReasons', 'judgmentRuling', 'appealFacts', 'appealReasons', and 'appealRuling' fields, use simple markdown for formatting: use '**text**' for bolding, '~~text~~' for strikethrough, '\`code\`' for inline code, start lines with '* ' for bullet points, start lines with '1. ' for numbered lists, '[link text](url)' for hyperlinks, and enclose multi-line code snippets in triple backticks (\`\`\`). For tabular data, use Markdown table format. If a field is not present in the text, use null for its value. Here is the case text: \n\n${text}`;
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json',
-            responseSchema: schema,
-          },
-        });
-        rawResponseText = response.text;
-        const analysis = JSON.parse(rawResponseText);
-        const newRecord: CaseRecord = { originalText: text, analysis, timestamp: Date.now(), tags: [] };
-        const newId = await putCaseInDB(newRecord);
-        addLogEntry('CASE_ANALYZED', `Analyzed single case. New Case ID: ${newId}`);
-        setAnalysisResults(prev =>
-          prev.map(r => r.timestamp === placeholder.timestamp ? { ...newRecord, id: newId, loading: false } : r)
-        );
-      } catch (err) {
-        console.error(err);
-        const classifiedError = classifyError(err, rawResponseText);
-        const errorRecord: CaseRecord = {
-            ...placeholder,
-            loading: false,
-            error: classifiedError
-        };
-        setAnalysisResults(prev =>
-            prev.map(r => r.timestamp === placeholder.timestamp ? errorRecord : r)
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
     if (uploadedFiles) {
-        const getCasesFromFiles = async (files: FileList): Promise<string[]> => {
-            const fileReadPromises = Array.from(files).map(file => {
-                return new Promise<string[]>((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                        try {
-                            const content = event.target?.result as string;
-                            if (!content || !content.trim()) {
-                                resolve([]);
-                                return;
-                            }
-                            const fileName = file.name.toLowerCase();
-
-                            const extractText = (item: any): string | null => {
-                                if (typeof item === 'string' && item.trim()) {
-                                    return item.trim();
-                                }
-                                if (typeof item === 'object' && item !== null) {
-                                    if (typeof item.originalText === 'string' && item.originalText.trim()) return item.originalText.trim();
-                                    if (typeof item.text === 'string' && item.text.trim()) return item.text.trim();
-                                    if (typeof item.content === 'string' && item.content.trim()) return item.content.trim();
-                                    // Fallback for objects without a clear text field
-                                    return JSON.stringify(item);
-                                }
-                                return null;
-                            };
-
-                            if (fileName.endsWith('.jsonl')) {
-                                const cases = content.trim().split('\n')
-                                    .filter(line => line.trim() !== '')
-                                    .map(line => {
-                                        try {
-                                            const parsed = JSON.parse(line);
-                                            return extractText(parsed);
-                                        } catch {
-                                            return null; // Ignore malformed JSON lines
-                                        }
-                                    })
-                                    .filter((c): c is string => !!c);
-                                resolve(cases);
-                            } else if (fileName.endsWith('.json')) {
-                                const parsedContent = JSON.parse(content);
-                                if (Array.isArray(parsedContent)) {
-                                    const cases = parsedContent
-                                        .map(extractText)
-                                        .filter((c): c is string => !!c);
-                                    resolve(cases);
-                                } else {
-                                    // Handle single JSON object file or other JSON value
-                                    const caseText = extractText(parsedContent);
-                                    resolve(caseText ? [caseText] : []);
-                                }
-                            } else if (fileName.endsWith('.txt') || fileName.endsWith('.md')) {
-                                resolve([content]);
-                            } else {
-                                resolve([]);
-                            }
-                        } catch (err) {
-                            if (err instanceof SyntaxError) {
-                                reject(new Error(t('errorInvalidJson')));
-                            } else {
-                                reject(err);
-                            }
-                        }
-                    };
-                    reader.onerror = () => reject(new Error(t('errorReadFile')));
-                    reader.readAsText(file);
-                });
-            });
-
-            const nestedCases = await Promise.all(fileReadPromises);
-            return nestedCases.flat();
-        };
-
-      try {
-        const cases = await getCasesFromFiles(uploadedFiles);
-        if (cases.length === 0) {
-          setError(t('errorFileNoCases'));
-          resetUploadState();
-          return;
-        }
-
-        setUploadProgress({ current: 0, total: cases.length });
-
-        const placeholderRecords: CaseRecord[] = cases.map((text: string, index: number) => ({
-          originalText: text,
-          timestamp: Date.now() + index, // Unique temporary key
-          loading: true,
-        }));
-
-        setAnalysisResults(prev => [...placeholderRecords.reverse(), ...prev]);
+        setLoading(true);
+        const files = Array.from(uploadedFiles);
+        setUploadProgress({ current: 0, total: files.length, step: 'parsing' });
         setActiveTab('history');
 
-        for (const [index, placeholder] of placeholderRecords.entries()) {
-          let rawResponseText: string | undefined;
-          try {
-            const prompt = `Analyze the following legal case text from Saudi Arabia and extract the specified information in JSON format. For the 'judgmentFacts', 'judgmentReasons', 'judgmentRuling', 'appealFacts', 'appealReasons', and 'appealRuling' fields, use simple markdown for formatting: use '**text**' for bolding, '~~text~~' for strikethrough, '\`code\`' for inline code, start lines with '* ' for bullet points, start lines with '1. ' for numbered lists, '[link text](url)' for hyperlinks, and enclose multi-line code snippets in triple backticks (\`\`\`). For tabular data, use Markdown table format. If a field is not present in the text, use null for its value. Here is the case text: \n\n${placeholder.originalText}`;
+        let allCasesToAnalyze: { text: string; source: string }[] = [];
+        
+        try {
+            for (let index = 0; index < files.length; index++) {
+                const file = files[index] as File;
+                setUploadProgress({ current: index + 1, total: files.length, step: 'parsing' });
+                const casesFromFile = await parseFile(file, t);
+                casesFromFile.forEach(text => {
+                    allCasesToAnalyze.push({ text, source: file.name });
+                });
+            }
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            console.error("File parsing failed:", err);
+            setError(errorMessage);
+            resetUploadState();
+            return;
+        }
+
+        if (allCasesToAnalyze.length === 0) {
+            setError(t('errorFileNoCases'));
+            resetUploadState();
+            return;
+        }
+
+        const placeholderRecords: CaseRecord[] = allCasesToAnalyze.map((caseItem, index) => ({
+            originalText: `${t('caseAnalysisTitle')} from ${caseItem.source}`,
+            timestamp: Date.now() + index,
+            loading: true,
+        }));
+        setAnalysisResults(prev => [...placeholderRecords.reverse(), ...prev]);
+        setUploadProgress({ current: 0, total: allCasesToAnalyze.length, step: 'analyzing' });
+        setIsBatchProcessing(true);
+
+        if (navigator.serviceWorker.controller) {
+             navigator.serviceWorker.controller.postMessage({
+                type: 'START_ANALYSIS',
+                payload: {
+                    cases: allCasesToAnalyze,
+                    schema,
+                    placeholderRecords,
+                    errorTemplates: {
+                        title: t('analysisFailedTitle'),
+                        message: (err: string) => t('errorFailedCase', err),
+                        suggestion: t('errorGenericSuggestion'),
+                    }
+                }
+            });
+        } else {
+            setError("Service worker not ready. Please reload and try again.");
+            resetUploadState();
+        }
+    } else {
+        setLoading(true);
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const text = caseText;
+
+        const placeholder: CaseRecord = {
+            originalText: text,
+            timestamp: Date.now(),
+            loading: true,
+        };
+
+        setAnalysisResults(prev => [placeholder, ...prev]);
+        setActiveTab('history');
+        setCaseText('');
+        
+        const geminiSchema = convertEditableSchemaToGemini(schema);
+        let rawResponseText: string | undefined;
+
+        try {
+            const prompt = `Analyze the following legal case text in its original Arabic language from Saudi Arabia and extract the specified information in JSON format according to the provided schema. For any fields that expect long-form text (like facts, reasons, rulings), use simple markdown for formatting: use '**text**' for bolding, '~~text~~' for strikethrough, start lines with '* ' for bullet points, '1. ' for numbered lists, and use Markdown tables for tabular data. If a field is not present in the text, use null for its value. Here is the case text: \n\n${text}`;
             const response = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
-              contents: prompt,
-              config: {
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
                 responseMimeType: 'application/json',
-                responseSchema: schema,
-              },
+                responseSchema: geminiSchema,
+            },
             });
             rawResponseText = response.text;
             const analysis = JSON.parse(rawResponseText);
-            const newRecord: CaseRecord = {
-              originalText: placeholder.originalText,
-              analysis,
-              timestamp: Date.now(),
-              tags: []
-            };
+            const newRecord: CaseRecord = { originalText: text, analysis, timestamp: Date.now(), tags: [] };
             const newId = await putCaseInDB(newRecord);
-
+            addLogEntry('CASE_ANALYZED', `Analyzed single case. New Case ID: ${newId}`);
             setAnalysisResults(prev =>
-              prev.map(r => r.timestamp === placeholder.timestamp ? { ...newRecord, id: newId, loading: false } : r)
+            prev.map(r => r.timestamp === placeholder.timestamp ? { ...newRecord, id: newId, loading: false } : r)
             );
-          } catch (err) {
-            console.error(`Failed to analyze case:`, err);
+        } catch (err) {
+            console.error(err);
             const classifiedError = classifyError(err, rawResponseText);
-            const errorRecord = {
-              ...placeholder,
-              loading: false,
-              error: classifiedError,
+            const errorRecord: CaseRecord = {
+                ...placeholder,
+                loading: false,
+                error: classifiedError
             };
+            const newId = await putCaseInDB(errorRecord);
             setAnalysisResults(prev =>
-              prev.map(r => r.timestamp === placeholder.timestamp ? errorRecord : r)
+                prev.map(r => r.timestamp === placeholder.timestamp ? { ...errorRecord, id: newId } : r)
             );
-          } finally {
-            setUploadProgress(prev => prev ? { ...prev, current: index + 1 } : null);
-          }
+        } finally {
+            setLoading(false);
         }
-        addLogEntry('BULK_ANALYZE_COMPLETED', `Completed analysis of ${cases.length} cases from file upload.`);
-      } catch (err) {
-        console.error(err);
-         setError(err instanceof Error ? err.message : 'An unexpected error occurred during file processing.');
-      } finally {
-        resetUploadState();
-        setUploadProgress(null);
-      }
-    } else {
-      await analyzeSingleCase(caseText);
     }
   };
   
   const handleRetry = async (caseToRetry: CaseRecord, newText?: string) => {
     const textToAnalyze = newText ?? caseToRetry.originalText;
     
+    const tempId = caseToRetry.id || Date.now();
+
     setAnalysisResults(prev => prev.map(r =>
-      r.timestamp === caseToRetry.timestamp ? { ...caseToRetry, originalText: textToAnalyze, loading: true, error: undefined } : r
+      (r.id === tempId || r.timestamp === caseToRetry.timestamp) ? { ...caseToRetry, originalText: textToAnalyze, loading: true, error: undefined } : r
     ));
 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const geminiSchema = convertEditableSchemaToGemini(schema);
 
     let rawResponseText: string | undefined;
     try {
-      const prompt = `Analyze the following legal case text from Saudi Arabia and extract the specified information in JSON format. For the 'judgmentFacts', 'judgmentReasons', 'judgmentRuling', 'appealFacts', 'appealReasons', and 'appealRuling' fields, use simple markdown for formatting: use '**text**' for bolding, '~~text~~' for strikethrough, '\`code\`' for inline code, start lines with '* ' for bullet points, start lines with '1. ' for numbered lists, '[link text](url)' for hyperlinks, and enclose multi-line code snippets in triple backticks (\`\`\`). For tabular data, use Markdown table format. If a field is not present in the text, use null for its value. Here is the case text: \n\n${textToAnalyze}`;
+      const prompt = `Analyze the following legal case text in its original Arabic language from Saudi Arabia and extract the specified information in JSON format according to the provided schema. For any fields that expect long-form text (like facts, reasons, rulings), use simple markdown for formatting: use '**text**' for bolding, '~~text~~' for strikethrough, start lines with '* ' for bullet points, '1. ' for numbered lists, and use Markdown tables for tabular data. If a field is not present in the text, use null for its value. Here is the case text: \n\n${textToAnalyze}`;
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
-          responseSchema: schema,
+          responseSchema: geminiSchema,
         },
       });
       rawResponseText = response.text;
       const analysis = JSON.parse(rawResponseText);
-      const updatedRecord: CaseRecord = { ...caseToRetry, originalText: textToAnalyze, analysis, timestamp: Date.now(), loading: false, error: undefined, tags: caseToRetry.tags || [] };
-      const newId = await putCaseInDB(updatedRecord);
+      const successfulRecord: CaseRecord = {
+        id: caseToRetry.id,
+        originalText: textToAnalyze,
+        analysis,
+        timestamp: Date.now(),
+        loading: false,
+        error: undefined,
+        tags: caseToRetry.tags || []
+      };
+      const newId = await putCaseInDB(successfulRecord);
       addLogEntry('CASE_RETRY_SUCCESS', `Successfully re-analyzed case. Original timestamp: ${caseToRetry.timestamp}. New ID: ${newId}`);
       setAnalysisResults(prev =>
-        prev.map(r => r.timestamp === caseToRetry.timestamp ? { ...updatedRecord, id: newId } : r)
+        prev.map(r => (r.id === tempId || r.timestamp === caseToRetry.timestamp) ? { ...successfulRecord, id: newId } : r)
       );
     } catch (err) {
       console.error("Retry failed:", err);
@@ -885,12 +1154,14 @@ function App() {
       addLogEntry('CASE_RETRY_FAILED', `Failed to re-analyze case. Original timestamp: ${caseToRetry.timestamp}. Error: ${classifiedError.title}`);
       const errorRecord = {
         ...caseToRetry,
+        id: caseToRetry.id,
         originalText: textToAnalyze,
         loading: false,
         error: classifiedError,
       };
+      await putCaseInDB(errorRecord);
       setAnalysisResults(prev =>
-        prev.map(r => r.timestamp === caseToRetry.timestamp ? errorRecord : r)
+        prev.map(r => (r.id === tempId || r.timestamp === caseToRetry.timestamp) ? errorRecord : r)
       );
     }
   };
@@ -994,6 +1265,45 @@ function App() {
     });
   };
 
+  const handleBulkDeleteCases = async (idsToDelete: number[]) => {
+    setDialogConfig({
+        isOpen: true,
+        title: t('confirmBulkDeleteTitle'),
+        message: t('confirmBulkDeleteMessage', idsToDelete.length),
+        onConfirm: async () => {
+            try {
+                await bulkDeleteCasesFromDB(idsToDelete);
+                addLogEntry('BULK_DELETE_SUCCESS', `Successfully deleted ${idsToDelete.length} cases.`);
+                setAnalysisResults(prev => prev.filter(r => r.id === undefined || !idsToDelete.includes(r.id)));
+            } catch (err) {
+                 console.error('Failed to bulk delete cases:', err);
+                 setError(t('errorBulkDelete'));
+            } finally {
+                closeDialog();
+            }
+        },
+    });
+  };
+
+  const handleBulkUpdateCases = async (updatedRecords: Map<number, CaseRecord>) => {
+    try {
+        await bulkUpdateCasesInDB(updatedRecords);
+        addLogEntry('BULK_TAG_SUCCESS', `Successfully tagged ${updatedRecords.size} cases.`);
+        
+        setAnalysisResults(prev => prev.map(record => {
+            if (record.id !== undefined && updatedRecords.has(record.id)) {
+                return updatedRecords.get(record.id)!;
+            }
+            return record;
+        }));
+
+    } catch(err) {
+        console.error('Failed to bulk update cases:', err);
+        setError(t('errorBulkUpdate'));
+    }
+  };
+
+
   const filteredResults = useMemo(() => {
     if (!searchTerm.trim()) {
       return analysisResults;
@@ -1070,9 +1380,9 @@ function App() {
             {activeTab === 'input' && (
                 <div id="input-panel" className="input-section" role="tabpanel" aria-labelledby="input-tab">
                     {error && <div className="error-message">{error}</div>}
-                    {loading && uploadProgress ? (
+                    {isBatchProcessing && uploadProgress ? (
                     <div className="progress-indicator">
-                        <p>{t('analyzingCasesProgress', uploadProgress.current, uploadProgress.total)}</p>
+                        <p>{uploadProgress.step === 'parsing' ? t('parsingFileProgress', uploadProgress.current, uploadProgress.total) : t('analyzingCasesProgress', uploadProgress.current, uploadProgress.total)}</p>
                         <div className="progress-bar-container">
                         <div
                             className="progress-bar"
@@ -1099,7 +1409,7 @@ function App() {
                             }}
                             placeholder={t('caseTextPlaceholder')}
                             rows={15}
-                            disabled={loading}
+                            disabled={loading || isBatchProcessing}
                             aria-label="Case Text Input"
                         />
                         <div className="divider">{t('orDivider')}</div>
@@ -1107,11 +1417,11 @@ function App() {
                         <label htmlFor="file-upload" className="file-label">
                             {t('uploadFileLabel')}
                         </label>
-                        <input id="file-upload" type="file" onChange={handleFileChange} accept=".json,.jsonl,.txt,.md" disabled={loading} multiple />
+                        <input id="file-upload" type="file" onChange={handleFileChange} accept=".json,.jsonl,.txt,.md" disabled={loading || isBatchProcessing} multiple />
                         {uploadedFiles && <span className="file-name">{t('filesSelected', uploadedFiles.length)}</span>}
                         </div>
-                        <button type="submit" disabled={loading}>
-                        {loading ? t('analyzingButton') : t('analyzeButton')}
+                        <button type="submit" disabled={loading || isBatchProcessing}>
+                        {loading || isBatchProcessing ? t('analyzingButton') : t('analyzeButton')}
                         </button>
                     </form>
                     )}
@@ -1125,6 +1435,7 @@ function App() {
                     ) : (analysisResults.length > 0 || searchTerm) ? (
                         <ResultsDisplay 
                             results={filteredResults} 
+                            schema={schema}
                             allTags={allTags}
                             onClear={handleClearHistory}
                             onExport={handleExportHistory}
@@ -1143,14 +1454,22 @@ function App() {
             </div>
         </>
       ) : (
-        <AdminDashboard allCases={analysisResults} t={t} />
+        <AdminDashboard
+            allCases={analysisResults}
+            schema={schema}
+            onSchemaUpdate={handleSchemaUpdate}
+            onBulkDelete={handleBulkDeleteCases}
+            onBulkUpdate={handleBulkUpdateCases}
+            t={t}
+        />
       )}
     </main>
   );
 }
 
-const ResultsDisplay = ({ results, allTags, onClear, onExport, onUpdateCase, onDeleteCase, onRetry, searchTerm, setSearchTerm, t }: { 
+const ResultsDisplay = ({ results, schema, allTags, onClear, onExport, onUpdateCase, onDeleteCase, onRetry, searchTerm, setSearchTerm, t }: { 
   results: CaseRecord[], 
+  schema: EditableSchema,
   allTags: string[],
   onClear: () => void, 
   onExport: () => void,
@@ -1205,17 +1524,16 @@ const ResultsDisplay = ({ results, allTags, onClear, onExport, onUpdateCase, onD
       )}
 
       {results.map((result) => {
-        const key = result.id ?? result.timestamp;
+        const itemKey = result.id ?? result.timestamp;
         return (
           <ResultCard 
-            key={key} 
+            key={itemKey} 
             record={result}
-            isExpanded={expandedId === key}
-            onToggle={() => setExpandedId(currentId => currentId === key ? null : key)}
-//- Error in file index.tsx on line 1215: Cannot find name 'onUpdate'. Did you mean 'onpaste'?
-//- Error in file index.tsx on line 1216: Cannot find name 'onDelete'.
-            onUpdate={onUpdateCase}
-            onDelete={onDeleteCase}
+            schema={schema}
+            isExpanded={expandedId === itemKey}
+            onToggle={() => setExpandedId(currentId => currentId === itemKey ? null : itemKey)}
+            onUpdateCase={onUpdateCase}
+            onDeleteCase={onDeleteCase}
             onRetry={onRetry}
             onSetSearchTerm={setSearchTerm}
             t={t}
@@ -1416,21 +1734,6 @@ const MarkdownRenderer = ({ text }: { text: string | null | undefined }) => {
   return <div className="markdown-content">{elements}</div>;
 };
 
-
-const LongTextField = ({ label, text, className }: { label: string, text: string | null | undefined, className?: string }) => {
-  if (!text) {
-    return null;
-  }
-  return (
-    <div className={`long-text-field ${className || ''}`}>
-      <h5 className="long-text-field-label">{label}</h5>
-      <div className="long-text-field-content">
-        <MarkdownRenderer text={text} />
-      </div>
-    </div>
-  );
-};
-
 const highlightJsonString = (jsonString: string): string => {
   if (!jsonString) return '';
   return jsonString
@@ -1534,62 +1837,29 @@ const MarkdownEditor = ({ value, onChange, disabled, rows, id }: { value: string
     );
 };
 
-const JsonEditor = ({ value, onChange, disabled, t, id }: { value: string, onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void, disabled?: boolean, t: TFunction, id?: string }) => {
-  const [error, setError] = useState('');
-  const preRef = useRef<HTMLPreElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    if (!value.trim()) {
-      setError('');
-      return;
-    }
-    try {
-      JSON.parse(value);
-      setError('');
-    } catch (e) {
-      setError(t('errorInvalidJsonFormat'));
-    }
-  }, [value, t]);
-
-  const handleScroll = () => {
-    if (preRef.current && textareaRef.current) {
-      preRef.current.scrollTop = textareaRef.current.scrollTop;
-      preRef.current.scrollLeft = textareaRef.current.scrollLeft;
-    }
-  };
-
-  const highlightedValue = highlightJsonString(value);
-
-  return (
-    <div className="json-editor-container">
-      <pre ref={preRef} aria-hidden="true">
-        <code dangerouslySetInnerHTML={{ __html: highlightedValue + '\n' }} />
-      </pre>
-      <textarea
-        id={id}
-        ref={textareaRef}
-        value={value}
-        onChange={onChange}
-        disabled={disabled}
-        onScroll={handleScroll}
-        spellCheck="false"
-        aria-invalid={!!error}
-        aria-describedby={error ? `json-error-desc` : undefined}
-      />
-      {error && <p id="json-error-desc" className="json-error" role="alert">{error}</p>}
-    </div>
-  );
+// FIX: Define a dedicated props type for ResultCard. This helps TypeScript correctly
+// identify it as a React component and understand that the `key` prop is a special,
+// reserved prop that doesn't need to be defined in the component's props.
+type ResultCardProps = {
+    record: CaseRecord;
+    schema: EditableSchema;
+    isExpanded: boolean;
+    onToggle: () => void;
+    onUpdateCase: (record: CaseRecord) => Promise<void>;
+    onDeleteCase: (id: number) => void;
+    onRetry: (record: CaseRecord, newText?: string) => void;
+    onSetSearchTerm: (term: string) => void;
+    t: TFunction;
 };
 
-
-const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry, onSetSearchTerm, t }: { record: CaseRecord; isExpanded: boolean; onToggle: () => void; onUpdate: (record: CaseRecord) => Promise<void>; onDelete: (id: number) => void; onRetry: (record: CaseRecord, newText?: string) => void; onSetSearchTerm: (term: string) => void; t: TFunction; }) => {
+// FIX: Explicitly type ResultCard as a React.FC to resolve the 'key' prop error.
+const ResultCard: React.FC<ResultCardProps> = ({ record, schema, isExpanded, onToggle, onUpdateCase, onDeleteCase, onRetry, onSetSearchTerm, t }) => {
   const { loading, error, analysis, originalText, id } = record;
   const [isEditing, setIsEditing] = useState(false);
   const [isEditingFromError, setIsEditingFromError] = useState(false);
   const [editedOriginalText, setEditedOriginalText] = useState(originalText);
-  const [editedAnalysis, setEditedAnalysis] = useState(JSON.stringify(analysis || {}, null, 2));
-  const [jsonError, setJsonError] = useState('');
+  const [editedAnalysisObject, setEditedAnalysisObject] = useState(analysis || {});
+  const [saveError, setSaveError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [copyStatus, setCopyStatus] = useState(t('copyButtonLabel'));
   const [newTag, setNewTag] = useState('');
@@ -1598,6 +1868,37 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
     // Reset copy button text if language changes
     setCopyStatus(t('copyButtonLabel'));
   }, [t, isExpanded]);
+
+  const cardTitle = useMemo(() => {
+    if (!analysis) return originalText.startsWith('File:') ? originalText : t('caseAnalysisTitle');
+    const primaryKeyFields = schema.filter(f => f.isPrimaryKey);
+    const titleParts = primaryKeyFields
+      .map(f => analysis[f.name])
+      .filter(Boolean);
+
+    if (titleParts.length > 0) return titleParts.join(' - ');
+
+    const firstStringField = schema.find(f => f.type === Type.STRING);
+    if (firstStringField && analysis[firstStringField.name]) {
+      return analysis[firstStringField.name];
+    }
+    
+    return t('caseAnalysisTitle');
+  }, [analysis, schema, t, originalText]);
+  
+  const cardSubtitle = useMemo(() => {
+      if (!analysis) return t('clickViewDetails');
+      const primaryKeyFields = schema.filter(f => f.isPrimaryKey);
+      const firstPkValue = primaryKeyFields.length > 0 ? analysis[primaryKeyFields[0].name] : undefined;
+      const firstStringValue = analysis[schema.find(f => f.type === Type.STRING)?.name || ''];
+      
+      if (cardTitle !== firstPkValue && firstPkValue) return String(firstPkValue);
+      if (cardTitle !== firstStringValue && firstStringValue) return String(firstStringValue);
+      
+      return record.id ? `${t('caseIdPrefix')}${record.id}`: t('clickViewDetails');
+
+  }, [analysis, schema, cardTitle, record.id, t]);
+
 
   const handleCopyJson = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1614,15 +1915,15 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
     setEditedOriginalText(originalText);
-    setEditedAnalysis(JSON.stringify(analysis || {}, null, 2));
-    setJsonError('');
+    setEditedAnalysisObject(analysis || {});
+    setSaveError('');
     setIsEditing(true);
   };
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (id !== undefined) {
-        onDelete(id);
+        onDeleteCase(id);
     }
   };
 
@@ -1630,19 +1931,18 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
     setIsEditing(false);
     setIsEditingFromError(false);
   };
+
+    const handleAnalysisChange = (fieldName: string, value: any) => {
+        setEditedAnalysisObject((prev: any) => ({
+            ...prev,
+            [fieldName]: value
+        }));
+    };
   
   const handleSave = async () => {
-    setJsonError('');
-    let parsedAnalysis;
-    try {
-        parsedAnalysis = JSON.parse(editedAnalysis);
-    } catch (error) {
-        setJsonError(t('errorInvalidJsonFormat'));
-        return;
-    }
-
+    setSaveError('');
     if (id === undefined) {
-        setJsonError('Cannot save record without an ID.');
+        setSaveError('Cannot save record without an ID.');
         return;
     }
 
@@ -1652,13 +1952,13 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
           ...record,
           id,
           originalText: editedOriginalText,
-          analysis: parsedAnalysis,
+          analysis: editedAnalysisObject,
       };
-      await onUpdate(updatedRecord);
+      await onUpdateCase(updatedRecord);
       setIsEditing(false);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      setJsonError(t('errorUpdateCase', errorMessage));
+      setSaveError(t('errorUpdateCase', errorMessage));
     } finally {
       setIsSaving(false);
     }
@@ -1682,7 +1982,7 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
     };
 
     try {
-        await onUpdate(updatedRecord);
+        await onUpdateCase(updatedRecord);
         setNewTag('');
     } catch (err) {
         console.error("Failed to add tag", err);
@@ -1696,7 +1996,7 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
     const updatedRecord: CaseRecord = { ...record, id, tags: updatedTags };
 
     try {
-        await onUpdate(updatedRecord);
+        await onUpdateCase(updatedRecord);
     } catch (err) {
         console.error("Failed to remove tag", err);
     }
@@ -1706,7 +2006,7 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
     return (
         <div className="result-card">
             <div className="summary-loading">
-                <span>{t('loadingAnalysis')}</span>
+                <span>{originalText}</span>
                 <div className="small-loader"></div>
             </div>
         </div>
@@ -1781,17 +2081,48 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
               disabled={isSaving}
             />
           </div>
-          <div className="edit-form-field">
-            <label htmlFor={`edit-analysis-json-${id}`}>{t('rawDataSection')}</label>
-            <JsonEditor
-              id={`edit-analysis-json-${id}`}
-              value={editedAnalysis}
-              onChange={(e) => setEditedAnalysis(e.target.value)}
-              disabled={isSaving}
-              t={t}
-            />
-            {jsonError && <p className="json-error" role="alert">{jsonError}</p>}
+          
+          <div className="analysis-editor">
+            <h4 className="result-section-title">{t('caseInfoSection')}</h4>
+            <div className="section-content section-grid-dynamic">
+                {schema.map(field => {
+                    const fieldId = `edit-${field.name}-${id}`;
+                    const value = editedAnalysisObject[field.name];
+
+                    let input;
+                    switch (field.type) {
+                        case Type.BOOLEAN:
+                            input = <input id={fieldId} type="checkbox" checked={!!value} onChange={e => handleAnalysisChange(field.name, e.target.checked)} disabled={isSaving}/>;
+                            break;
+                        case Type.INTEGER:
+                        case Type.NUMBER:
+                            input = <input id={fieldId} type="number" value={value ?? ''} onChange={e => handleAnalysisChange(field.name, e.target.value ? Number(e.target.value) : null)} disabled={isSaving} />;
+                            break;
+                        case Type.ARRAY:
+                             input = <MarkdownEditor id={fieldId} value={Array.isArray(value) ? value.join('\n') : (value || '')} onChange={e => handleAnalysisChange(field.name, e.target.value.split('\n'))} disabled={isSaving} rows={5} />;
+                             break;
+                        case Type.STRING:
+                        default:
+                            const isLongText = field.description.toLowerCase().includes('facts') || field.description.toLowerCase().includes('reasons') || field.description.toLowerCase().includes('ruling');
+                            if (isLongText) {
+                                input = <MarkdownEditor id={fieldId} value={value || ''} onChange={e => handleAnalysisChange(field.name, e.target.value)} disabled={isSaving} rows={5} />;
+                            } else {
+                                input = <input id={fieldId} type="text" value={value || ''} onChange={e => handleAnalysisChange(field.name, e.target.value)} disabled={isSaving} />;
+                            }
+                            break;
+                    }
+
+                    return (
+                        <div key={field.name} className={`edit-form-field ${field.type === Type.BOOLEAN ? 'checkbox-group' : ''}`}>
+                            <label htmlFor={fieldId}>{field.name}</label>
+                            {input}
+                        </div>
+                    );
+                })}
+            </div>
           </div>
+
+          {saveError && <p className="json-error" role="alert">{saveError}</p>}
           <div className="edit-form-controls">
             <button className="cancel-btn" onClick={handleCancel} disabled={isSaving}>{t('cancelButtonLabel')}</button>
             <button onClick={handleSave} disabled={isSaving}>
@@ -1803,16 +2134,22 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
     );
   }
 
-  const renderField = (label: string, value: any) => {
-    if (value === null || value === undefined || value === '' || (Array.isArray(value) && value.length === 0)) {
-      return null;
+  const renderFieldValue = (field: EditableSchemaField, value: any) => {
+    if (value === null || value === undefined || value === '') return null;
+    if (Array.isArray(value) && value.length === 0) return null;
+
+    switch(field.type) {
+        case Type.BOOLEAN:
+            return <span>{String(value)}</span>;
+        case Type.ARRAY:
+            return <ul>{(value as any[]).map((item, index) => <li key={index}>{String(item)}</li>)}</ul>;
+        case Type.STRING:
+            const isLongText = field.description.toLowerCase().includes('facts') || field.description.toLowerCase().includes('reasons') || field.description.toLowerCase().includes('ruling');
+            return isLongText ? <MarkdownRenderer text={String(value)} /> : <span>{String(value)}</span>
+        default:
+            return <span>{String(value)}</span>
     }
-    return (
-      <div className="field">
-        <strong>{label}:</strong> <span>{typeof value === 'boolean' ? String(value) : value}</span>
-      </div>
-    );
-  };
+  }
   
   return (
     <div className={`result-card ${isExpanded ? 'expanded' : ''}`}>
@@ -1825,8 +2162,8 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
         aria-expanded={isExpanded}
       >
         <div className="summary-info">
-          <h3>{analysis.title || analysis.decisionTitle || t('caseAnalysisTitle')}</h3>
-          <p>{analysis.judgmentNumber ? `${t('judgmentNumberPrefix')}${analysis.judgmentNumber}` : (analysis.id ? `${t('caseIdPrefix')}${analysis.id}`: t('clickViewDetails'))}</p>
+          <h3>{cardTitle}</h3>
+          <p>{cardSubtitle}</p>
         </div>
         <div className="result-card-header-controls">
            {id !== undefined && <button className="edit-btn" onClick={handleEdit}>{t('editButtonLabel')}</button>}
@@ -1839,61 +2176,21 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
         <div className="result-card-body">
             <div className="result-section">
               <h4 className="result-section-title">{t('caseInfoSection')}</h4>
-              <div className="section-content section-grid">
-                {renderField(t('idLabel'), analysis.id)}
-                {renderField(t('titleLabel'), analysis.title)}
-                {renderField(t('decisionTitleLabel'), analysis.decisionTitle)}
-                {renderField(t('yearLabel'), analysis.year && analysis.hijriYear ? `${analysis.year} / ${analysis.hijriYear}H` : analysis.year || analysis.hijriYear)}
-                {renderField(t('exportDateLabel'), analysis.exportDate)}
+              <div className="section-content section-grid-dynamic">
+                {schema.map(field => {
+                    const value = analysis[field.name];
+                    const renderedValue = renderFieldValue(field, value);
+                    if (!renderedValue) return null;
+
+                    return (
+                        <div className="field" key={field.name}>
+                            <strong>{field.name}:</strong>
+                            <div className="field-value-wrapper">{renderedValue}</div>
+                        </div>
+                    );
+                })}
               </div>
             </div>
-
-            {analysis.hasJudgment && (
-              <div className="result-section">
-                <h4 className="result-section-title">{t('judgmentDetailsSection')}</h4>
-                <div className="section-content">
-                  <div className="section-grid">
-                    {renderField(t('judgmentNumberLabel'), analysis.judgmentNumber)}
-                    {renderField(t('dateLabel'), analysis.judgmentDate && analysis.judgmentHijriDate ? `${analysis.judgmentDate} / ${analysis.judgmentHijriDate}H` : analysis.judgmentDate || analysis.judgmentHijriDate)}
-                    {renderField(t('courtLabel'), analysis.judgmentCourtName && analysis.judgmentCityName ? `${analysis.judgmentCourtName}, ${analysis.judgmentCityName}`: analysis.judgmentCourtName || analysis.judgmentCityName)}
-                  </div>
-                  <LongTextField label={t('factsLabel')} text={analysis.judgmentFacts} className="field-facts" />
-                  <LongTextField label={t('reasonsLabel')} text={analysis.judgmentReasons} className="field-reasons" />
-                  <LongTextField label={t('rulingLabel')} text={analysis.judgmentRuling} className="field-ruling" />
-                  <LongTextField label={t('textOfRulingLabel')} text={analysis.judgmentTextOfRuling} />
-                </div>
-              </div>
-            )}
-
-            {analysis.hasAppeal && (
-               <div className="result-section">
-                <h4 className="result-section-title">{t('appealDetailsSection')}</h4>
-                <div className="section-content">
-                  <div className="section-grid">
-                    {renderField(t('appealNumberLabel'), analysis.appealNumber)}
-                    {renderField(t('appealDateLabel'), analysis.appealDate && analysis.appealHijriDate ? `${analysis.appealDate} / ${analysis.appealHijriDate}H` : analysis.appealDate || analysis.appealHijriDate)}
-                    {renderField(t('appealCourtLabel'), analysis.appealCourtName && analysis.appealCityName ? `${analysis.appealCourtName}, ${analysis.appealCityName}`: analysis.appealCourtName || analysis.appealCityName)}
-                  </div>
-                  <LongTextField label={t('appealFactsLabel')} text={analysis.appealFacts} className="field-facts" />
-                  <LongTextField label={t('appealReasonsLabel')} text={analysis.appealReasons} className="field-reasons" />
-                  <LongTextField label={t('appealRulingLabel')} text={analysis.appealRuling} className="field-ruling" />
-                  <LongTextField label={t('appealTextOfRulingLabel')} text={analysis.appealTextOfRuling} />
-                </div>
-              </div>
-            )}
-
-            {analysis.judgmentNarrationList && analysis.judgmentNarrationList.length > 0 && (
-              <div className="result-section">
-                <h4 className="result-section-title">{t('judgmentNarrationsSection')}</h4>
-                <div className="section-content">
-                  <ul>
-                    {analysis.judgmentNarrationList.map((narration: string, index: number) => (
-                      <li key={index}>{narration}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
             
             <div className="result-section">
                 <h4 className="result-section-title">{t('tagsLabel')}</h4>
@@ -1961,16 +2258,29 @@ const ResultCard = ({ record, isExpanded, onToggle, onUpdate, onDelete, onRetry,
 
 // --- ADMIN DASHBOARD COMPONENTS ---
 
-const AdminDashboard = ({ allCases, t }: { allCases: CaseRecord[], t: TFunction }) => {
+const AdminDashboard = ({ allCases, schema, onSchemaUpdate, onBulkDelete, onBulkUpdate, t }: {
+    allCases: CaseRecord[],
+    schema: EditableSchema,
+    onSchemaUpdate: (schema: EditableSchema) => Promise<void>,
+    onBulkDelete: (ids: number[]) => void,
+    onBulkUpdate: (records: Map<number, CaseRecord>) => void,
+    t: TFunction
+}) => {
     const [activeSection, setActiveSection] = useState('analytics');
 
     const sections: { [key: string]: React.ReactNode } = {
         analytics: <AnalyticsSection allCases={allCases} t={t} />,
         users: <UserManagementSection t={t} />,
-        'case-data': <CaseDataManagementSection allCases={allCases} t={t} />,
+        'case-data': <CaseDataManagementSection
+            allCases={allCases}
+            schema={schema}
+            onBulkDelete={onBulkDelete}
+            onBulkUpdate={onBulkUpdate}
+            t={t}
+        />,
         'audit-log': <AuditLogSection t={t} />,
         'system-status': <SystemStatusSection t={t} />,
-        settings: <ConfigurationSettingsSection t={t} />,
+        settings: <ConfigurationSettingsSection schema={schema} onSchemaUpdate={onSchemaUpdate} t={t} />,
     };
 
     const navItems = [
@@ -2034,11 +2344,13 @@ const AnalyticsSection = ({ allCases, t }: { allCases: CaseRecord[], t: TFunctio
             const date = subDays(new Date(), i);
             const formattedDate = format(date, 'MMM d');
             labels.push(formattedDate);
-            dateMap.set(format(startOfDay(date), 'yyyy-MM-dd'), 0);
+            // FIX: Cast `startOfDay` to `any` to work around a potential module resolution issue that causes a "not callable" error.
+            dateMap.set(format((startOfDay as any)(date), 'yyyy-MM-dd'), 0);
         }
 
         successfulCases.forEach(c => {
-            const caseDate = format(startOfDay(new Date(c.timestamp)), 'yyyy-MM-dd');
+            // FIX: Cast `startOfDay` to `any` to work around a potential module resolution issue that causes a "not callable" error.
+            const caseDate = format((startOfDay as any)(new Date(c.timestamp)), 'yyyy-MM-dd');
             if (dateMap.has(caseDate)) {
                 dateMap.set(caseDate, (dateMap.get(caseDate) || 0) + 1);
             }
@@ -2046,7 +2358,8 @@ const AnalyticsSection = ({ allCases, t }: { allCases: CaseRecord[], t: TFunctio
         
         labels.forEach(label => {
             // Re-create the key from the label to look up in the map
-            const dateKey = format(startOfDay(new Date(label + ' ' + new Date().getFullYear())), 'yyyy-MM-dd');
+            // FIX: Cast `startOfDay` to `any` to work around a potential module resolution issue that causes a "not callable" error.
+            const dateKey = format((startOfDay as any)(new Date(label + ' ' + new Date().getFullYear())), 'yyyy-MM-dd');
              if(dateMap.has(dateKey)) {
                 data.push(dateMap.get(dateKey)!);
              }
@@ -2091,8 +2404,6 @@ const AnalyticsSection = ({ allCases, t }: { allCases: CaseRecord[], t: TFunctio
                 </div>
                 <div className="chart-container admin-card">
                     <h3>{t('casesByAppealStatus')}</h3>
-                    {/*//- Error in file index.tsx on line 2090: This JSX tag's 'children' prop expects a single child of type 'ReactNode', but multiple children were provided.*/}
-                    {/*//- Error in file index.tsx on line 2092: Cannot find name 'dough'.*/}
                     <Doughnut data={doughnutChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }} }}/>
                 </div>
             </div>
@@ -2131,40 +2442,153 @@ const UserManagementSection = ({ t }: { t: TFunction }) => {
     );
 };
 
-const CaseDataManagementSection = ({ allCases, t }: { allCases: CaseRecord[], t: TFunction }) => {
-    const successfulCases = useMemo(() => allCases.filter(c => !c.loading && !c.error && c.analysis), [allCases]);
+const BulkTagModal = ({ isOpen, onClose, onSave, t }: { isOpen: boolean; onClose: () => void; onSave: (tags: string[]) => void; t: TFunction; }) => {
+    const [tags, setTags] = useState('');
+
+    if (!isOpen) return null;
+
+    const handleSave = () => {
+        const tagArray = tags.split(',').map(tag => tag.trim()).filter(Boolean);
+        onSave(tagArray);
+        setTags('');
+        onClose();
+    };
+
+    return (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="bulk-tag-title">
+            <div className="modal-content">
+                <h3 id="bulk-tag-title">{t('addTagsToSelectedTitle')}</h3>
+                <div className="form-group">
+                    <input
+                        type="text"
+                        value={tags}
+                        onChange={(e) => setTags(e.target.value)}
+                        placeholder={t('tagsToAddPlaceholder')}
+                        aria-label={t('tagsToAddPlaceholder')}
+                    />
+                </div>
+                <div className="modal-actions">
+                    <button className="dialog-cancel-btn" onClick={onClose}>{t('cancelButtonLabel')}</button>
+                    <button onClick={handleSave}>{t('saveButtonLabel')}</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const CaseDataManagementSection = ({ allCases, schema, onBulkDelete, onBulkUpdate, t }: {
+    allCases: CaseRecord[],
+    schema: EditableSchema,
+    onBulkDelete: (ids: number[]) => void,
+    onBulkUpdate: (records: Map<number, CaseRecord>) => void,
+    t: TFunction
+}) => {
+    const [selectedCaseIds, setSelectedCaseIds] = useState<Set<number>>(new Set());
+    const [isTaggingModalOpen, setIsTaggingModalOpen] = useState(false);
+    const successfulCases = useMemo(() => allCases.filter(c => !c.loading && !c.error && c.analysis && c.id !== undefined), [allCases]);
+    const primaryKeyFields = useMemo(() => schema.filter(f => f.isPrimaryKey), [schema]);
+
+    const handleSelectCase = (caseId: number, isSelected: boolean) => {
+        setSelectedCaseIds(prev => {
+            const newSet = new Set(prev);
+            if (isSelected) {
+                newSet.add(caseId);
+            } else {
+                newSet.delete(caseId);
+            }
+            return newSet;
+        });
+    };
+
+    const handleSelectAll = (e: ChangeEvent<HTMLInputElement>) => {
+        if (e.target.checked) {
+            const allIds = new Set(successfulCases.map(c => c.id!));
+            setSelectedCaseIds(allIds);
+        } else {
+            setSelectedCaseIds(new Set());
+        }
+    };
+
+    const handleBulkDelete = () => {
+        if (selectedCaseIds.size > 0) {
+            onBulkDelete(Array.from(selectedCaseIds));
+            setSelectedCaseIds(new Set());
+        }
+    };
+    
+    const handleBulkAddTags = (tagsToAdd: string[]) => {
+        const updatedRecords = new Map<number, CaseRecord>();
+        successfulCases.forEach(c => {
+            if (c.id !== undefined && selectedCaseIds.has(c.id)) {
+                const existingTags = new Set(c.tags || []);
+                tagsToAdd.forEach(tag => existingTags.add(tag));
+                updatedRecords.set(c.id, { ...c, tags: Array.from(existingTags) });
+            }
+        });
+        
+        if (updatedRecords.size > 0) {
+            onBulkUpdate(updatedRecords);
+        }
+        setSelectedCaseIds(new Set());
+    };
+
+    const isAllSelected = selectedCaseIds.size > 0 && selectedCaseIds.size === successfulCases.length;
+
     return (
         <div className="admin-section-content">
+            <BulkTagModal
+                isOpen={isTaggingModalOpen}
+                onClose={() => setIsTaggingModalOpen(false)}
+                onSave={handleBulkAddTags}
+                t={t}
+            />
             <div className="admin-card">
                 <div className="admin-card-header">
-                    <div className="search-input-wrapper">
-                        <input type="search" placeholder={t('filterCasesPlaceholder')} disabled/>
-                    </div>
-                     <div className="button-group">
-                        <button className="admin-button-secondary" disabled>{t('exportHistoryButton')}</button>
-                        <button className="admin-button" disabled>{t('bulkActionsLabel')}</button>
-                     </div>
+                     {selectedCaseIds.size > 0 ? (
+                        <div className="bulk-actions-toolbar">
+                            <span>{t('casesSelected', selectedCaseIds.size)}</span>
+                             <div className="button-group">
+                                <button className="admin-button-secondary" onClick={() => setIsTaggingModalOpen(true)}>{t('addTagsButtonLabel')}</button>
+                                <button className="admin-button-danger" onClick={handleBulkDelete}>{t('deleteSelectedButtonLabel')}</button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="search-input-wrapper">
+                           <input type="search" placeholder={t('filterCasesPlaceholder')} disabled/>
+                        </div>
+                    )}
                 </div>
                 <div className="admin-card-body">
                     <div className="admin-table-container">
                         <table className="admin-table">
                             <thead>
                                 <tr>
-                                    <th>{t('titleLabel')}</th>
-                                    <th>{t('judgmentNumberLabel')}</th>
+                                    <th className="checkbox-cell">
+                                        <input
+                                            type="checkbox"
+                                            onChange={handleSelectAll}
+                                            checked={isAllSelected}
+                                            aria-label={t('selectAllLabel')}
+                                        />
+                                    </th>
+                                    {primaryKeyFields.map(field => <th key={field.name}>{field.name}</th>)}
                                     <th>{t('dateCreatedLabel')}</th>
                                     <th>{t('tagsCountLabel')}</th>
-                                    <th>{t('hasAppealLabel')}</th>
                                 </tr>
                             </thead>
                             <tbody>
                             {successfulCases.map(c => (
-                                <tr key={c.id}>
-                                    <td>{c.analysis.title || c.analysis.decisionTitle || '-'}</td>
-                                    <td>{c.analysis.judgmentNumber || '-'}</td>
+                                <tr key={c.id} className={c.id !== undefined && selectedCaseIds.has(c.id) ? 'selected' : ''}>
+                                    <td className="checkbox-cell">
+                                        <input
+                                            type="checkbox"
+                                            checked={c.id !== undefined && selectedCaseIds.has(c.id)}
+                                            onChange={(e) => c.id !== undefined && handleSelectCase(c.id, e.target.checked)}
+                                        />
+                                    </td>
+                                    {primaryKeyFields.map(field => <td key={field.name}>{c.analysis[field.name] || '-'}</td>)}
                                     <td>{format(new Date(c.timestamp), 'yyyy-MM-dd')}</td>
                                     <td>{c.tags?.length || 0}</td>
-                                    <td>{c.analysis.hasAppeal ? '✅' : '❌'}</td>
                                 </tr>
                             ))}
                             </tbody>
@@ -2218,7 +2642,8 @@ const AuditLogSection = ({ t }: { t: TFunction }) => {
                                     <tr key={log.id}>
                                         <td><code className="code-pill">{log.action}</code></td>
                                         <td>{log.details}</td>
-                                        <td title={new Date(log.timestamp).toLocaleString()}>{formatDistanceToNow(new Date(log.timestamp), { addSuffix: true, locale: lang === 'ar' ? arLocale : enLocale })}</td>
+                                        {/* FIX: Cast options object to `any` to bypass incorrect type definition for `formatDistanceToNow` which is missing the `locale` property. */}
+                                        <td title={new Date(log.timestamp).toLocaleString()}>{formatDistanceToNow(new Date(log.timestamp), { addSuffix: true, locale: lang === 'ar' ? arLocale : enLocale } as any)}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -2291,61 +2716,94 @@ const SystemStatusSection = ({ t }: { t: TFunction }) => {
     );
 };
 
+const SchemaBuilder = ({ initialSchema, onSave, t }: {
+    initialSchema: EditableSchema,
+    onSave: (schema: EditableSchema) => Promise<void>,
+    t: TFunction
+}) => {
+    const [fields, setFields] = useState<EditableSchema>(initialSchema);
+    const [isSaving, setIsSaving] = useState(false);
+    const [saveMessage, setSaveMessage] = useState('');
 
-const ConfigurationSettingsSection = ({ t }: { t: TFunction }) => {
-    const [theme, setTheme] = useState(localStorage.getItem('judgment-analyzer-theme') || 'light');
+    useEffect(() => {
+        // When the initial schema from props changes (e.g., loaded from DB), update state.
+        setFields(initialSchema);
+    }, [initialSchema]);
 
-    const handleThemeChange = (e: ChangeEvent<HTMLInputElement>) => {
-        const newTheme = e.target.checked ? 'dark' : 'light';
-        setTheme(newTheme);
-        localStorage.setItem('judgment-analyzer-theme', newTheme);
-        document.documentElement.setAttribute('data-theme', newTheme);
-        addLogEntry('SETTINGS_CHANGED', `Theme changed to ${newTheme}.`);
+    const handleFieldChange = (index: number, prop: keyof EditableSchemaField, value: any) => {
+        const newFields = [...fields];
+        (newFields[index] as any)[prop] = value;
+        setFields(newFields);
     };
-    
+
+    const addField = () => {
+        setFields([...fields, { name: '', type: Type.STRING, description: '', isPrimaryKey: false, nullable: true }]);
+    };
+
+    const removeField = (index: number) => {
+        setFields(fields.filter((_, i) => i !== index));
+    };
+
+    const handleSave = async () => {
+        setIsSaving(true);
+        setSaveMessage('');
+        try {
+            await onSave(fields);
+            setSaveMessage(t('schemaSavedSuccess'));
+        } catch (error) {
+            setSaveMessage(t('errorSavingSchema'));
+        } finally {
+            setIsSaving(false);
+            setTimeout(() => setSaveMessage(''), 3000);
+        }
+    };
+
     return (
-        <div className="admin-section-content settings-grid">
-            <div className="admin-card">
-                <div className="admin-card-header">
-                    <h3>{t('themeLabel')}</h3>
-                </div>
-                <div className="admin-card-body">
-                    <div className="setting-item">
-                        <label htmlFor="theme-switcher">{t('themeLabel')}</label>
-                        <div className="theme-switcher">
-                            <span>{t('lightTheme')}</span>
-                            <label className="switch">
-                                <input id="theme-switcher" type="checkbox" checked={theme === 'dark'} onChange={handleThemeChange} />
-                                <span className="slider round"></span>
-                            </label>
-                            <span>{t('darkTheme')}</span>
-                        </div>
-                    </div>
-                </div>
+        <div className="admin-card">
+            <div className="admin-card-header">
+                <h3>{t('schemaSettingsSection')}</h3>
             </div>
-            <div className="admin-card">
-                <div className="placeholder-content with-overlay">
-                    <PlaceholderOverlay t={t}/>
-                    <div className="admin-card-header">
-                        <h3>{t('apiSettingsSection')}</h3>
-                    </div>
-                    <div className="admin-card-body">
-                        <div className="form-group">
-                            <label>API Key</label>
-                            <input type="text" disabled value={t('apiKeyManagedByEnv')} />
-                        </div>
-                         <div className="form-group">
-                            <label>{t('safetySettingsLabel')}</label>
-                            <select disabled><option>Block most</option></select>
-                        </div>
-                         <div className="form-group">
-                            <label>{t('defaultModelLabel')}</label>
-                             <select disabled><option>gemini-2.5-flash</option></select>
-                        </div>
-                        <div className="form-group checkbox-group">
-                             <input type="checkbox" id="adv-features" disabled/>
-                             <label htmlFor="adv-features">{t('enableAdvanceFeatures')}</label>
-                        </div>
+            <div className="admin-card-body">
+                <p className="settings-description">{t('schemaDescription')}</p>
+                <div className="schema-builder-table-container">
+                    <table className="admin-table schema-builder-table">
+                        <thead>
+                            <tr>
+                                <th>{t('fieldNameLabel')}</th>
+                                <th>{t('fieldTypeLabel')}</th>
+                                <th>{t('descriptionLabel')}</th>
+                                <th className="checkbox-cell">{t('primaryKeyLabel')}</th>
+                                <th className="checkbox-cell">{t('nullableLabel')}</th>
+                                <th>{t('actionsLabel')}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {fields.map((field, index) => (
+                                <tr key={index}>
+                                    <td><input type="text" value={field.name} onChange={(e) => handleFieldChange(index, 'name', e.target.value)} /></td>
+                                    <td>
+                                        <select value={field.type} onChange={(e) => handleFieldChange(index, 'type', e.target.value as Type)}>
+                                            {Object.values(Type).filter(type => type !== Type.TYPE_UNSPECIFIED && type !== Type.NULL).map(type => (
+                                                <option key={type} value={type}>{type}</option>
+                                            ))}
+                                        </select>
+                                    </td>
+                                    <td><input type="text" value={field.description} onChange={(e) => handleFieldChange(index, 'description', e.target.value)} /></td>
+                                    <td className="checkbox-cell"><input type="checkbox" checked={field.isPrimaryKey} onChange={(e) => handleFieldChange(index, 'isPrimaryKey', e.target.checked)} /></td>
+                                    <td className="checkbox-cell"><input type="checkbox" checked={field.nullable} onChange={(e) => handleFieldChange(index, 'nullable', e.target.checked)} /></td>
+                                    <td><button className="delete-btn" onClick={() => removeField(index)}>&times;</button></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="schema-builder-controls">
+                    <button className="admin-button-secondary" onClick={addField}>{t('addFieldButton')}</button>
+                    <div className="save-action">
+                        {saveMessage && <span className={`save-message ${saveMessage === t('errorSavingSchema') ? 'error' : 'success'}`}>{saveMessage}</span>}
+                        <button className="admin-button" onClick={handleSave} disabled={isSaving}>
+                            {isSaving ? t('savingSchemaButton') : t('saveSchemaButton')}
+                        </button>
                     </div>
                 </div>
             </div>
@@ -2354,5 +2812,50 @@ const ConfigurationSettingsSection = ({ t }: { t: TFunction }) => {
 };
 
 
-const root = ReactDOM.createRoot(document.getElementById('root')!);
-root.render(<App />);
+const ConfigurationSettingsSection = ({ schema, onSchemaUpdate, t }: {
+    schema: EditableSchema,
+    onSchemaUpdate: (schema: EditableSchema) => Promise<void>,
+    t: TFunction
+}) => {
+    const [theme, setTheme] = useState(localStorage.getItem('judgment-analyzer-theme') || 'light');
+
+    const handleThemeChange = (e: ChangeEvent<HTMLInputElement>) => {
+        const newTheme = e.target.checked ? 'dark' : 'light';
+        setTheme(newTheme);
+        localStorage.setItem('judgment-analyzer-theme', newTheme);
+        document.documentElement.setAttribute('data-theme', newTheme);
+        addLogEntry('SETTINGS_THEME_CHANGED', `Theme changed to ${newTheme}.`);
+    };
+
+    return (
+         <div className="admin-section-content">
+            <div className="settings-grid">
+                <SchemaBuilder initialSchema={schema} onSave={onSchemaUpdate} t={t} />
+
+                <div className="admin-card">
+                     <div className="admin-card-header"><h3>{t('configurationSettingsSection')}</h3></div>
+                     <div className="admin-card-body">
+                        <div className="setting-item">
+                            <label htmlFor="theme-toggle">{t('themeLabel')}</label>
+                            <div className="theme-switcher">
+                                <span>{t('lightTheme')}</span>
+                                <label className="switch">
+                                    <input id="theme-toggle" type="checkbox" checked={theme === 'dark'} onChange={handleThemeChange} />
+                                    <span className="slider round"></span>
+                                </label>
+                                <span>{t('darkTheme')}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
