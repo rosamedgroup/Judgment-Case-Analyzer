@@ -3,30 +3,28 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import { GoogleGenAI, Type } from '@google/genai';
-// FIX: Add React default import to fix numerous "Cannot find namespace 'React'" errors and the related "key" prop error.
 import React, { useState, FormEvent, ChangeEvent, useEffect, useMemo, useCallback, useRef, MouseEvent } from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
-// FIX: Changed date-fns imports to be modular to resolve "no exported member" errors for subDays, startOfDay, and enUS.
-// This is a common pattern for specific versions of date-fns or with certain bundler configurations.
-// FIX: Changed date-fns imports for format and formatDistanceToNow to be modular to resolve "no exported member" errors.
 import format from 'date-fns/format';
 import formatDistanceToNow from 'date-fns/formatDistanceToNow';
 import subDays from 'date-fns/subDays';
 import startOfDay from 'date-fns/startOfDay';
 import { default as arLocale } from 'date-fns/locale/ar';
 import { default as enLocale } from 'date-fns/locale/en-US';
+import { judicialData } from './data.js';
 
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
 
 const DB_NAME = 'JudgmentCaseDB';
-const DB_VERSION = 3; // Incremented version for new object store
+const DB_VERSION = 4; // Incremented version for new object store
 const STORE_NAME = 'cases';
 const LOG_STORE_NAME = 'audit_logs';
 const SCHEMA_STORE_NAME = 'schema_store';
+const JUDICIAL_RECORDS_STORE_NAME = 'judicial_records';
 
 
 interface CaseError {
@@ -74,7 +72,6 @@ const translations = {
     judgmentDetailsSection: "تفاصيل الحكم",
     appealDetailsSection: "تفاصيل الاستئناف",
     judgmentNarrationsSection: "روايات الحكم",
-    // FIX: Added missing translation key 'appealNarrationsSection' to support rendering the appeal narrations section.
     appealNarrationsSection: "روايات الاستئناف",
     originalTextSection: "النص الأصلي",
     rawDataSection: "بيانات JSON الخام",
@@ -82,17 +79,30 @@ const translations = {
     titleLabel: "العنوان",
     decisionTitleLabel: "عنوان القرار",
     yearLabel: "السنة",
+    hijriYearLabel: "السنة الهجرية",
     exportDateLabel: "تاريخ التصدير",
     judgmentNumberLabel: "رقم الحكم",
     dateLabel: "التاريخ",
+    judgmentDateLabel: "تاريخ الحكم",
+    judgmentHijriDateLabel: "تاريخ الحكم الهجري",
     courtLabel: "المحكمة",
+    judgmentCourtNameLabel: "محكمة الحكم",
+    judgmentCityNameLabel: "مدينة الحكم",
     appealNumberLabel: "رقم الاستئناف",
     appealDateLabel: "تاريخ الاستئناف",
+    appealHijriDateLabel: "تاريخ الاستئناف الهجري",
     appealCourtLabel: "محكمة الاستئناف",
+    appealCourtNameLabel: "محكمة الاستئناف",
+    appealCityNameLabel: "مدينة الاستئناف",
     factsLabel: "الوقائع",
+    judgmentFactsLabel: "وقائع الحكم",
     reasonsLabel: "الأسباب",
+    judgmentReasonsLabel: "أسباب الحكم",
     rulingLabel: "المنطوق",
+    judgmentRulingLabel: "منطوق الحكم",
     textOfRulingLabel: "نص الحكم",
+    judgmentTextOfRulingLabel: "نص منطوق الحكم",
+    judgmentNarrationListLabel: "روايات الحكم",
     appealFactsLabel: "وقائع الاستئناف",
     appealReasonsLabel: "أسباب الاستئناف",
     appealRulingLabel: "منطوق الاستئناف",
@@ -269,6 +279,7 @@ const translations = {
     errorRecord: 'سجل خطأ',
     errorMessageLabel: 'رسالة الخطأ',
     originalUrl: 'الرابط الأصلي',
+    dragAndDropPrompt: 'اسحب وأفلت ملفاتك هنا',
   },
   en: {
     appTitle: "Judgment Case Analyzer",
@@ -294,7 +305,6 @@ const translations = {
     judgmentDetailsSection: "Judgment Details",
     appealDetailsSection: "Appeal Details",
     judgmentNarrationsSection: "Judgment Narrations",
-    // FIX: Added missing translation key 'appealNarrationsSection' to support rendering the appeal narrations section.
     appealNarrationsSection: "Appeal Narrations",
     originalTextSection: "Original Text",
     rawDataSection: "Raw JSON Data",
@@ -302,17 +312,30 @@ const translations = {
     titleLabel: 'Title',
     decisionTitleLabel: 'Decision Title',
     yearLabel: 'Year',
+    hijriYearLabel: 'Hijri Year',
     exportDateLabel: 'Export Date',
     judgmentNumberLabel: 'Judgment Number',
     dateLabel: 'Date',
+    judgmentDateLabel: 'Judgment Date',
+    judgmentHijriDateLabel: 'Judgment Hijri Date',
     courtLabel: 'Court',
+    judgmentCourtNameLabel: 'Judgment Court',
+    judgmentCityNameLabel: 'Judgment City',
     appealNumberLabel: 'Appeal Number',
     appealDateLabel: 'Appeal Date',
+    appealHijriDateLabel: 'Appeal Hijri Date',
     appealCourtLabel: 'Appeal Court',
+    appealCourtNameLabel: 'Appeal Court',
+    appealCityNameLabel: 'Appeal City',
     factsLabel: "Facts",
+    judgmentFactsLabel: "Judgment Facts",
     reasonsLabel: "Reasons",
+    judgmentReasonsLabel: "Judgment Reasons",
     rulingLabel: "Ruling",
+    judgmentRulingLabel: "Judgment Ruling",
     textOfRulingLabel: "Text of Ruling",
+    judgmentTextOfRulingLabel: "Judgment Text of Ruling",
+    judgmentNarrationListLabel: 'Judgment Narrations',
     appealFactsLabel: "Appeal Facts",
     appealReasonsLabel: "Appeal Reasons",
     appealRulingLabel: "Appeal Ruling",
@@ -484,6 +507,7 @@ const translations = {
     errorRecord: 'Error Record',
     errorMessageLabel: 'Error Message',
     originalUrl: 'Original URL',
+    dragAndDropPrompt: 'Drag & drop your files here',
   }
 };
 
@@ -500,6 +524,9 @@ const openDB = (): Promise<IDBDatabase> => {
       }
       if (!db.objectStoreNames.contains(SCHEMA_STORE_NAME)) {
         db.createObjectStore(SCHEMA_STORE_NAME, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(JUDICIAL_RECORDS_STORE_NAME)) {
+        db.createObjectStore(JUDICIAL_RECORDS_STORE_NAME, { keyPath: 'case_id' });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -855,6 +882,7 @@ function App() {
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; step: 'parsing' | 'analyzing' } | null>(null);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [view, setView] = useState<'app' | 'admin'>('app');
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -930,9 +958,35 @@ function App() {
   }, [language]);
 
   useEffect(() => {
+    const seedDatabase = async () => {
+      try {
+        const isSeeded = localStorage.getItem('judicialRecordsSeeded_v1');
+        if (isSeeded) return;
+
+        const db = await openDB();
+        const transaction = db.transaction(JUDICIAL_RECORDS_STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(JUDICIAL_RECORDS_STORE_NAME);
+        
+        for (const record of judicialData) {
+            store.put(record);
+        }
+
+        await new Promise<void>((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+        });
+        
+        localStorage.setItem('judicialRecordsSeeded_v1', 'true');
+        console.log("Judicial records database seeded successfully.");
+      } catch (error) {
+        console.error("Failed to seed judicial records database:", error);
+      }
+    };
+
     const loadData = async () => {
       setDbLoading(true);
       try {
+        await seedDatabase();
         const [history, customSchema] = await Promise.all([
           getAllCasesFromDB(),
           getCustomSchemaFromDB()
@@ -962,24 +1016,56 @@ function App() {
     }
   };
   
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const files = e.target.files;
-      const allowedExtensions = ['.json', '.jsonl', '.txt', '.md'];
-      const allValid = Array.from(files).every(file => 
-        allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
-      );
-  
-      if (allValid) {
-        setUploadedFiles(files);
-        setCaseText(''); // Clear textarea when files are selected
-        setError('');
-      } else {
-        setError(t('errorInvalidFile'));
-        e.target.value = ''; // Reset file input
-        setUploadedFiles(null);
-      }
+  const processSelectedFiles = (files: FileList | null): boolean => {
+    if (files && files.length > 0) {
+        const allowedExtensions = ['.json', '.jsonl', '.txt', '.md'];
+        const allValid = Array.from(files).every(file => 
+            allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
+        );
+
+        if (allValid) {
+            setUploadedFiles(files);
+            setCaseText(''); // Clear textarea when files are selected
+            setError('');
+            return true;
+        }
     }
+    setError(t('errorInvalidFile'));
+    setUploadedFiles(null);
+    return false;
+  };
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (!processSelectedFiles(e.target.files)) {
+        // Reset file input if validation fails
+        e.target.value = '';
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDraggingOver(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+    processSelectedFiles(e.dataTransfer.files);
   };
 
   const resetUploadState = useCallback(() => {
@@ -1026,8 +1112,8 @@ function App() {
       };
     }
     
-    // FIX: Safely checked for the 'name' property on the 'err' object of type 'unknown' by using the 'in' operator as a type guard.
-    const isGoogleApiError = typeof err === 'object' && err !== null && 'name' in err && err.name === 'GoogleGenerativeAIError';
+    // FIX: Safely check for the 'name' property on the 'err' object before access.
+    const isGoogleApiError = typeof err === 'object' && err !== null && 'name' in err && (err as { name: string }).name === 'GoogleGenerativeAIError';
     if (errorMessage.includes('[400') || isGoogleApiError) {
         if (/safety|blocked by response safety settings/i.test(errorMessage)) {
             return {
@@ -1121,22 +1207,31 @@ function App() {
         setUploadProgress({ current: 0, total: allCasesToAnalyze.length, step: 'analyzing' });
         setIsBatchProcessing(true);
 
-        if (navigator.serviceWorker.controller) {
-             navigator.serviceWorker.controller.postMessage({
-                type: 'START_ANALYSIS',
-                payload: {
-                    cases: allCasesToAnalyze,
-                    schema,
-                    placeholderRecords,
-                    errorTemplates: {
-                        title: t('analysisFailedTitle'),
-                        message: (err: string) => t('errorFailedCase', err),
-                        suggestion: t('errorGenericSuggestion'),
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.ready.then(registration => {
+                // We have a registration, so post the message to the active worker.
+                // The optional chaining ?. is a safeguard in case there's no active worker
+                // despite `ready` resolving, which is a rare edge case.
+                registration.active?.postMessage({
+                    type: 'START_ANALYSIS',
+                    payload: {
+                        cases: allCasesToAnalyze,
+                        schema,
+                        placeholderRecords,
+                        errorTemplates: {
+                            title: t('analysisFailedTitle'),
+                            message: (err: string) => t('errorFailedCase', err),
+                            suggestion: t('errorGenericSuggestion'),
+                        }
                     }
-                }
+                });
+            }).catch(err => {
+                console.error("Service worker failed to become ready:", err);
+                setError("Background analysis service failed to start. Please reload.");
+                resetUploadState();
             });
         } else {
-            setError("Service worker not ready. Please reload and try again.");
+            setError("Background analysis is not supported on this browser.");
             resetUploadState();
         }
     } else {
@@ -1524,13 +1619,28 @@ function App() {
                             aria-label="Case Text Input"
                         />
                         <div className="divider">{t('orDivider')}</div>
-                        <div className="file-input-wrapper">
-                        <label htmlFor="file-upload" className="file-label">
-                            {t('uploadFileLabel')}
+                        <label
+                            htmlFor="file-upload"
+                            className={`drop-zone ${isDraggingOver ? 'drag-over' : ''}`}
+                            onDragEnter={handleDragEnter}
+                            onDragLeave={handleDragLeave}
+                            onDragOver={handleDragOver}
+                            onDrop={handleDrop}
+                        >
+                            <input id="file-upload" type="file" onChange={handleFileChange} accept=".json,.jsonl,.txt,.md" disabled={loading || isBatchProcessing} multiple />
+                            <div className="drop-zone-content">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                                { uploadedFiles ? (
+                                    <span className="file-name">{t('filesSelected', uploadedFiles.length)}</span>
+                                ) : (
+                                    <>
+                                        <p className="drop-zone-text">{t('dragAndDropPrompt')}</p>
+                                        <div className="divider" style={{margin: 'var(--spacing-unit) 0'}}>{t('orDivider')}</div>
+                                        <span className="file-label">{t('uploadFileLabel')}</span>
+                                    </>
+                                )}
+                            </div>
                         </label>
-                        <input id="file-upload" type="file" onChange={handleFileChange} accept=".json,.jsonl,.txt,.md" disabled={loading || isBatchProcessing} multiple />
-                        {uploadedFiles && <span className="file-name">{t('filesSelected', uploadedFiles.length)}</span>}
-                        </div>
                         <button type="submit" disabled={loading || isBatchProcessing}>
                         {loading || isBatchProcessing ? t('analyzingButton') : t('analyzeButton')}
                         </button>
@@ -2145,17 +2255,20 @@ const ResultCard: React.FC<ResultCardProps> = ({ record, schema, isExpanded, onT
     };
     
     const AnalysisRenderer = ({ analysis, schema, t }: { analysis: any, schema: EditableSchema, t: TFunction }) => {
-        const caseInfoFields = ['id', 'title', 'decisionTitle', 'year', 'hijriYear', 'exportDate'];
-        const judgmentFields = ['judgmentNumber', 'date', 'judgmentDate', 'judgmentHijriDate', 'court', 'judgmentCourtName', 'judgmentCityName'];
-        const appealFields = ['hasAppeal', 'appealNumber', 'appealDate', 'appealHijriDate', 'appealCourt', 'appealCourtName', 'appealCityName'];
-        const narrationFields = ['facts', 'judgmentFacts', 'reasons', 'judgmentReasons', 'ruling', 'judgmentRuling', 'textOfRuling', 'judgmentTextOfRuling', 'judgmentNarrationList'];
-        const appealNarrationFields = ['appealFacts', 'appealReasons', 'appealRuling', 'appealTextOfRuling'];
+        // FIX: Update field arrays to match the schema and added translations.
+        // FIX: Changed field names to their corresponding TranslationKey to ensure type safety.
+        const caseInfoFields: TranslationKey[] = ['idLabel', 'titleLabel', 'decisionTitleLabel', 'yearLabel', 'hijriYearLabel', 'exportDateLabel'];
+        const judgmentFields: TranslationKey[] = ['judgmentNumberLabel', 'judgmentDateLabel', 'judgmentHijriDateLabel', 'judgmentCourtNameLabel', 'judgmentCityNameLabel'];
+        const appealFields: TranslationKey[] = ['hasAppealLabel', 'appealNumberLabel', 'appealDateLabel', 'appealHijriDateLabel', 'appealCourtNameLabel', 'appealCityNameLabel'];
+        const narrationFields: TranslationKey[] = ['judgmentFactsLabel', 'judgmentReasonsLabel', 'judgmentRulingLabel', 'judgmentTextOfRulingLabel', 'judgmentNarrationListLabel'];
+        const appealNarrationFields: TranslationKey[] = ['appealFactsLabel', 'appealReasonsLabel', 'appealRulingLabel', 'appealTextOfRulingLabel'];
         
-        const renderField = (fieldName: string) => {
+        const renderField = (fieldLabelKey: TranslationKey) => {
+            const fieldName = fieldLabelKey.replace(/Label$/, '');
             if (analysis[fieldName] === null || analysis[fieldName] === undefined || analysis[fieldName] === '') return null;
             
             const fieldSchema = schema.find(f => f.name === fieldName);
-            const label = t((`${fieldName}Label`) as TranslationKey, fieldName);
+            const label = t(fieldLabelKey, fieldName);
 
             let valueDisplay;
             if (typeof analysis[fieldName] === 'boolean') {
@@ -2180,7 +2293,7 @@ const ResultCard: React.FC<ResultCardProps> = ({ record, schema, isExpanded, onT
             );
         };
         
-        const renderSection = (titleKey: TranslationKey, fields: string[]) => {
+        const renderSection = (titleKey: TranslationKey, fields: TranslationKey[]) => {
             const renderedFields = fields.map(renderField).filter(Boolean);
             if (renderedFields.length === 0) return null;
             const isNarration = titleKey.toLowerCase().includes('narration');
@@ -2286,33 +2399,319 @@ const ResultCard: React.FC<ResultCardProps> = ({ record, schema, isExpanded, onT
     );
 };
 
-const JudicialRecordsViewer = ({ t }: { t: TFunction }) => {
-    return (
-        <div className="placeholder-content with-overlay">
-            <div className="placeholder-overlay">
-                <span>Feature coming soon</span>
-            </div>
-            <div className="records-viewer-layout">
-                <aside className="records-sidebar">
-                    <div className="filter-group">
-                        <input type="search" placeholder={t('searchByKeyword')} />
-                    </div>
-                    <h4 className="filters-title">{t('filtersTitle')}</h4>
-                    <div className="filter-group">
-                        <label>{t('filterByCourt')}</label>
-                        <select><option>General Court</option></select>
-                    </div>
-                    <div className="filter-group">
-                        <label>{t('filterByYear')}</label>
-                        <select><option>1445</option></select>
-                    </div>
-                    <button className="reset-filters-btn admin-button-secondary">{t('resetFilters')}</button>
-                </aside>
-                <div className="records-main-content">
-                    <div className="placeholder">{t('noRecordsFound')}</div>
+const RecordDetailView = ({ record, onBack, t }: { record: any, onBack: () => void, t: TFunction }) => {
+    const contentRef = useRef<HTMLDivElement>(null);
+    const [activeSection, setActiveSection] = useState('');
+
+    useEffect(() => {
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    setActiveSection(entry.target.id);
+                }
+            });
+        }, { rootMargin: "-50% 0px -50% 0px", threshold: 0 });
+
+        const sections = contentRef.current?.querySelectorAll('section[id]');
+        sections?.forEach(section => observer.observe(section));
+
+        return () => sections?.forEach(section => observer.unobserve(section));
+    }, [record]);
+
+
+    const renderDetailField = (labelKey: TranslationKey, value: any) => {
+        if (value === null || value === undefined || value === '') return null;
+        return (
+            <div className="field">
+                <strong>{t(labelKey)}</strong>
+                <div className="field-value-wrapper">
+                    {typeof value === 'boolean' ? (value ? '✔️' : '❌') : <MarkdownRenderer text={String(value)} />}
                 </div>
             </div>
+        );
+    };
+
+    const sections = [
+        { id: 'case-info', titleKey: 'caseInfoSection', fields: ['title', 'hijri_year'] },
+        { id: 'judgment-details', titleKey: 'judgmentDetailsSection', fields: ['judgment_number', 'judgment_hijri_date', 'judgment_court_name', 'judgment_city_name'] },
+        { id: 'judgment-text', titleKey: 'judgmentNarrationsSection', fields: ['judgment_text'] },
+        ...(record.has_appeal ? [
+            { id: 'appeal-details', titleKey: 'appealDetailsSection', fields: ['appeal_number', 'appeal_hijri_date', 'appeal_court_name', 'appeal_city_name'] },
+            { id: 'appeal-text', titleKey: 'appealNarrationsSection', fields: ['appeal_text'] }
+        ] : []),
+        { id: 'metadata', titleKey: 'rawDataSection', fields: ['original_url'] }
+    ].filter(section => section.fields.some(field => record[field]));
+
+
+    if (record.error) {
+        return (
+             <div className="record-detail-container">
+                <button onClick={onBack} className="back-to-list-btn">&larr; {t('backToList')}</button>
+                <div className="admin-card">
+                    <div className="admin-card-header"><h3>{t('errorRecord')}</h3></div>
+                    <div className="admin-card-body">
+                        {renderDetailField('errorMessageLabel', record.error)}
+                        {renderDetailField('originalUrl', record.original_url)}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="record-detail-container">
+            <button onClick={onBack} className="back-to-list-btn">&larr; {t('backToList')}</button>
+            <div className="record-detail-layout">
+                <div className="record-detail-content" ref={contentRef}>
+                    <div className="admin-card">
+                        <div className="admin-card-header">
+                            <h3>{record.title || t('caseAnalysisTitle')}</h3>
+                        </div>
+                        <div className="admin-card-body">
+                            <section id="case-info">
+                                <h4 className="result-section-title">{t('caseInfoSection')}</h4>
+                                <div className="section-grid-dynamic">
+                                    {renderDetailField('titleLabel', record.title)}
+                                    {renderDetailField('yearLabel', record.hijri_year)}
+                                </div>
+                            </section>
+                             <section id="judgment-details">
+                                <h4 className="result-section-title">{t('judgmentDetailsSection')}</h4>
+                                <div className="section-grid-dynamic">
+                                    {renderDetailField('judgmentNumberLabel', record.judgment_number)}
+                                    {renderDetailField('dateLabel', record.judgment_hijri_date)}
+                                    {renderDetailField('courtLabel', record.judgment_court_name)}
+                                    {renderDetailField('courtLabel', record.judgment_city_name)}
+                                </div>
+                            </section>
+                            <section id="judgment-text">
+                                <h4 className="result-section-title">{t('judgmentNarrationsSection')}</h4>
+                                {renderDetailField('textOfRulingLabel', record.judgment_text)}
+                            </section>
+                            {record.has_appeal && (
+                                <>
+                                 <section id="appeal-details">
+                                    <h4 className="result-section-title">{t('appealDetailsSection')}</h4>
+                                    <div className="section-grid-dynamic">
+                                       {renderDetailField('appealNumberLabel', record.appeal_number)}
+                                       {renderDetailField('appealDateLabel', record.appeal_hijri_date)}
+                                       {renderDetailField('appealCourtLabel', record.appeal_court_name)}
+                                       {renderDetailField('appealCourtLabel', record.appeal_city_name)}
+                                    </div>
+                                </section>
+                                 <section id="appeal-text">
+                                    <h4 className="result-section-title">{t('appealNarrationsSection')}</h4>
+                                    {renderDetailField('appealTextOfRulingLabel', record.appeal_text)}
+                                </section>
+                                </>
+                            )}
+                             <section id="metadata">
+                                <h4 className="result-section-title">{t('rawDataSection')}</h4>
+                                {renderDetailField('originalUrl', <a href={record.original_url} target="_blank" rel="noopener noreferrer">{record.original_url}</a>)}
+                            </section>
+                        </div>
+                    </div>
+                </div>
+                <aside className="record-detail-sidebar">
+                    <div className="admin-card">
+                        <div className="admin-card-header">
+                            <h4>{t('tableOfContents')}</h4>
+                        </div>
+                        <div className="admin-card-body">
+                             <nav className="record-detail-toc">
+                                <ul>
+                                    {sections.map(section => (
+                                         <li key={section.id}>
+                                            <a href={`#${section.id}`} className={activeSection === section.id ? 'active' : ''}>{t(section.titleKey)}</a>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </nav>
+                        </div>
+                    </div>
+                     <div className="admin-card case-pathfinder-card">
+                        <div className="admin-card-header">
+                            <h4>{t('casePathfinder')}</h4>
+                        </div>
+                        <div className="admin-card-body">
+                             <p>{t('pathfinderPlaceholder')}</p>
+                        </div>
+                    </div>
+                </aside>
+            </div>
         </div>
+    );
+};
+
+const JudicialRecordsViewer = ({ t }: { t: TFunction }) => {
+    const [records, setRecords] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+    
+    const [filters, setFilters] = useState({
+        keyword: '',
+        court: '',
+        city: '',
+        year: '',
+        hasAppeal: 'all',
+    });
+
+    useEffect(() => {
+        const fetchRecords = async () => {
+            try {
+                setLoading(true);
+                const db = await openDB();
+                const transaction = db.transaction(JUDICIAL_RECORDS_STORE_NAME, 'readonly');
+                const store = transaction.objectStore(JUDICIAL_RECORDS_STORE_NAME);
+                const allRecords = await new Promise<any[]>((resolve, reject) => {
+                    const request = store.getAll();
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+                setRecords(allRecords.sort((a,b) => (b.hijri_year || 0) - (a.hijri_year || 0)));
+            } catch (error) {
+                console.error("Failed to fetch judicial records:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchRecords();
+    }, []);
+
+    const uniqueCourts = useMemo(() => {
+        const courts = new Set<string>();
+        records.forEach(r => {
+            if (r.judgment_court_name) courts.add(r.judgment_court_name);
+            if (r.appeal_court_name) courts.add(r.appeal_court_name);
+        });
+        return Array.from(courts).sort();
+    }, [records]);
+
+     const uniqueCities = useMemo(() => {
+        const cities = new Set<string>();
+        records.forEach(r => {
+            if (r.judgment_city_name) cities.add(r.judgment_city_name);
+            if (r.appeal_city_name) cities.add(r.appeal_city_name);
+        });
+        return Array.from(cities).sort();
+    }, [records]);
+
+    const uniqueYears = useMemo(() => {
+        const years = new Set<number>();
+        records.forEach(r => {
+            if (r.hijri_year && r.hijri_year > 1000) years.add(r.hijri_year);
+        });
+        return Array.from(years).sort((a, b) => b - a);
+    }, [records]);
+
+    const handleFilterChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        setFilters(prev => ({ ...prev, [name]: value }));
+    };
+
+    const resetFilters = () => {
+        setFilters({ keyword: '', court: '', city: '', year: '', hasAppeal: 'all' });
+    };
+
+    const filteredRecords = useMemo(() => {
+        return records.filter(r => {
+            const keywordLower = filters.keyword.toLowerCase();
+            const textCorpus = JSON.stringify(r).toLowerCase();
+            if (filters.keyword && !textCorpus.includes(keywordLower)) return false;
+            
+            const recordCourt = r.judgment_court_name || r.appeal_court_name;
+            if (filters.court && recordCourt !== filters.court) return false;
+            
+            const recordCity = r.judgment_city_name || r.appeal_city_name;
+            if (filters.city && recordCity !== filters.city) return false;
+            
+            if (filters.year && String(r.hijri_year) !== filters.year) return false;
+
+            if (filters.hasAppeal !== 'all') {
+                const hasAppeal = filters.hasAppeal === 'true';
+                if (r.has_appeal !== hasAppeal) return false;
+            }
+            
+            return true;
+        });
+    }, [records, filters]);
+    
+    const selectedRecord = useMemo(() => {
+        if (!selectedRecordId) return null;
+        return records.find(r => r.case_id === selectedRecordId);
+    }, [records, selectedRecordId]);
+    
+    if (loading) {
+      return <div className="loader"></div>
+    }
+
+    return (
+      <div className="records-viewer-layout">
+        <aside className="records-sidebar">
+            <div className="filter-group">
+                <input type="search" name="keyword" value={filters.keyword} onChange={handleFilterChange} placeholder={t('searchByKeyword')} />
+            </div>
+            <h4 className="filters-title">{t('filtersTitle')}</h4>
+            <div className="filter-group">
+                <label htmlFor="court-filter">{t('filterByCourt')}</label>
+                <select id="court-filter" name="court" value={filters.court} onChange={handleFilterChange}>
+                    <option value="">{t('allRecords')}</option>
+                    {uniqueCourts.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+            </div>
+             <div className="filter-group">
+                <label htmlFor="city-filter">{t('filterByCity')}</label>
+                <select id="city-filter" name="city" value={filters.city} onChange={handleFilterChange}>
+                    <option value="">{t('allRecords')}</option>
+                    {uniqueCities.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+            </div>
+            <div className="filter-group">
+                <label htmlFor="year-filter">{t('filterByYear')}</label>
+                <select id="year-filter" name="year" value={filters.year} onChange={handleFilterChange}>
+                    <option value="">{t('allRecords')}</option>
+                    {uniqueYears.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+            </div>
+             <div className="filter-group">
+                <label>{t('filterByAppeal')}</label>
+                <div className="radio-group">
+                    <label><input type="radio" name="hasAppeal" value="all" checked={filters.hasAppeal === 'all'} onChange={handleFilterChange} /> {t('allRecords')}</label>
+                    <label><input type="radio" name="hasAppeal" value="true" checked={filters.hasAppeal === 'true'} onChange={handleFilterChange} /> {t('withAppeal')}</label>
+                    <label><input type="radio" name="hasAppeal" value="false" checked={filters.hasAppeal === 'false'} onChange={handleFilterChange} /> {t('withoutAppeal')}</label>
+                </div>
+            </div>
+            <button onClick={resetFilters} className="reset-filters-btn admin-button-secondary">{t('resetFilters')}</button>
+        </aside>
+        <div className="records-main-content">
+            {selectedRecord ? (
+                <RecordDetailView record={selectedRecord} onBack={() => setSelectedRecordId(null)} t={t} />
+            ) : (
+                <div className="records-list">
+                    {filteredRecords.length > 0 ? (
+                        filteredRecords.map(record => (
+                            <div key={record.case_id} className={`record-card ${record.error ? 'error-record' : ''}`} onClick={() => setSelectedRecordId(record.case_id)}>
+                                <h4>{record.title || record.case_id}</h4>
+                                <div className="record-card-meta">
+                                    {record.error ? (
+                                        <span>{t('errorLabel')}: {record.error}</span>
+                                    ) : (
+                                        <>
+                                            <span>{t('courtLabel')}: {record.judgment_court_name || 'N/A'}</span>
+                                            <span>{t('yearLabel')}: {record.hijri_year || 'N/A'}</span>
+                                            <span>{t('hasAppealLabel')}: {record.has_appeal ? '✔️' : '❌'}</span>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        ))
+                    ) : (
+                        <div className="placeholder">{t('noRecordsFound')}</div>
+                    )}
+                </div>
+            )}
+        </div>
+      </div>
     );
 };
 
