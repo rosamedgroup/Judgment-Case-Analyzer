@@ -783,11 +783,11 @@ const parseFile = async (file: File, t: TFunction): Promise<string[]> => {
             // being saved with a .json extension. We'll try to fix it.
             console.warn("Standard JSON parsing failed. Attempting to fix by treating as a stream of objects.", e);
             try {
-                // This regex finds a closing brace, followed by optional whitespace/newlines,
-                // and then an opening brace, and inserts a comma between them. This can fix
-                // both single-line and multi-line object streams.
-                const fixedText = `[${text.trim().replace(/}\s*{/g, '},{')}]`;
-                const data = JSON.parse(fixedText);
+                // This regex splits the text by whitespace that is between a '}' and a '{'.
+                // This handles multiple pretty-printed or minified JSON objects concatenated in one file.
+                const objectStrings = text.trim().split(/(?<=\})\s*(?=\{)/);
+                const jsonArrayString = `[${objectStrings.join(',')}]`;
+                const data = JSON.parse(jsonArrayString);
 
                 // The result of the fix should be an array.
                 if (!Array.isArray(data)) throw new Error(t('errorJsonNotArray'));
@@ -803,10 +803,11 @@ const parseFile = async (file: File, t: TFunction): Promise<string[]> => {
         }
     } else if (lowerCaseName.endsWith('.jsonl')) {
         try {
-            // A JSONL file is a stream of JSON objects. The most robust way to parse this,
-            // including pretty-printed objects, is to wrap it as a JSON array.
-            const fixedText = `[${text.trim().replace(/}\s*{/g, '},{')}]`;
-            const data = JSON.parse(fixedText);
+            // A JSONL file is a stream of JSON objects.
+            // We'll use a robust split-and-join approach that handles pretty-printed objects.
+            const objectStrings = text.trim().split(/(?<=\})\s*(?=\{)/);
+            const jsonArrayString = `[${objectStrings.join(',')}]`;
+            const data = JSON.parse(jsonArrayString);
 
             if (!Array.isArray(data)) {
                 // This would be very unusual for a JSONL file but is a good safeguard.
@@ -2070,9 +2071,6 @@ const MarkdownEditor = ({ value, onChange, disabled, rows, id }: { value: string
     );
 };
 
-// FIX: Define a dedicated props type for ResultCard. This helps TypeScript correctly
-// identify it as a React component and understand that the `key` prop is a special,
-// reserved prop that doesn't need to be defined in the component's props.
 type ResultCardProps = {
     record: CaseRecord;
     schema: EditableSchema;
@@ -2085,7 +2083,6 @@ type ResultCardProps = {
     t: TFunction;
 };
 
-// FIX: Explicitly type ResultCard as a React.FC to resolve the 'key' prop error.
 const ResultCard: React.FC<ResultCardProps> = ({ record, schema, isExpanded, onToggle, onUpdateCase, onDeleteCase, onRetry, onSetSearchTerm, t }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [isEditingOriginal, setIsEditingOriginal] = useState(false);
@@ -2094,7 +2091,6 @@ const ResultCard: React.FC<ResultCardProps> = ({ record, schema, isExpanded, onT
     const [jsonError, setJsonError] = useState('');
     const [saving, setSaving] = useState(false);
     const [activeTab, setActiveTab] = useState('analysis'); // 'analysis', 'original', 'raw'
-    // FIX: The 'language' property does not exist on HTMLElement. Switched to using the correct 'lang' property.
     const language = document.documentElement.lang;
 
     const handleEdit = () => {
@@ -2255,8 +2251,6 @@ const ResultCard: React.FC<ResultCardProps> = ({ record, schema, isExpanded, onT
     };
     
     const AnalysisRenderer = ({ analysis, schema, t }: { analysis: any, schema: EditableSchema, t: TFunction }) => {
-        // FIX: Update field arrays to match the schema and added translations.
-        // FIX: Changed field names to their corresponding TranslationKey to ensure type safety.
         const caseInfoFields: TranslationKey[] = ['idLabel', 'titleLabel', 'decisionTitleLabel', 'yearLabel', 'hijriYearLabel', 'exportDateLabel'];
         const judgmentFields: TranslationKey[] = ['judgmentNumberLabel', 'judgmentDateLabel', 'judgmentHijriDateLabel', 'judgmentCourtNameLabel', 'judgmentCityNameLabel'];
         const appealFields: TranslationKey[] = ['hasAppealLabel', 'appealNumberLabel', 'appealDateLabel', 'appealHijriDateLabel', 'appealCourtNameLabel', 'appealCityNameLabel'];
@@ -2431,7 +2425,7 @@ const RecordDetailView = ({ record, onBack, t }: { record: any, onBack: () => vo
         );
     };
 
-    const sections = [
+    const sections = ([
         { id: 'case-info', titleKey: 'caseInfoSection', fields: ['title', 'hijri_year'] },
         { id: 'judgment-details', titleKey: 'judgmentDetailsSection', fields: ['judgment_number', 'judgment_hijri_date', 'judgment_court_name', 'judgment_city_name'] },
         { id: 'judgment-text', titleKey: 'judgmentNarrationsSection', fields: ['judgment_text'] },
@@ -2440,7 +2434,7 @@ const RecordDetailView = ({ record, onBack, t }: { record: any, onBack: () => vo
             { id: 'appeal-text', titleKey: 'appealNarrationsSection', fields: ['appeal_text'] }
         ] : []),
         { id: 'metadata', titleKey: 'rawDataSection', fields: ['original_url'] }
-    ].filter(section => section.fields.some(field => record[field]));
+    ] as Array<{id: string, titleKey: TranslationKey, fields: string[]}>).filter(section => section.fields.some(field => record[field]));
 
 
     if (record.error) {
@@ -2856,8 +2850,140 @@ const CaseDataManagementSection = ({ cases, onBulkDelete, onBulkUpdate, t }: { c
 }
 
 const SchemaSettingsSection = ({ schema, onSchemaUpdate, t }: { schema: EditableSchema, onSchemaUpdate: (schema: EditableSchema) => Promise<void>, t: TFunction }) => {
-    return <PlaceholderSection t={t} />
-}
+    const [localSchema, setLocalSchema] = useState<EditableSchema>([]);
+    const [saving, setSaving] = useState(false);
+    const [saveStatus, setSaveStatus] = useState<'success' | 'error' | null>(null);
+
+    useEffect(() => {
+        // Deep copy to prevent modifying the original prop state directly
+        setLocalSchema(JSON.parse(JSON.stringify(schema)));
+    }, [schema]);
+
+    const handleFieldChange = (index: number, field: keyof EditableSchemaField, value: any) => {
+        const updatedSchema = [...localSchema];
+        updatedSchema[index] = { ...updatedSchema[index], [field]: value };
+        setLocalSchema(updatedSchema);
+    };
+
+    const addField = () => {
+        setLocalSchema([
+            ...localSchema,
+            { name: '', type: Type.STRING, description: '', isPrimaryKey: false, nullable: true }
+        ]);
+    };
+
+    const deleteField = (index: number) => {
+        setLocalSchema(localSchema.filter((_, i) => i !== index));
+    };
+
+    const handleSave = async () => {
+        setSaving(true);
+        setSaveStatus(null);
+        try {
+            await onSchemaUpdate(localSchema);
+            setSaveStatus('success');
+        } catch (err) {
+            setSaveStatus('error');
+        } finally {
+            setSaving(false);
+            setTimeout(() => setSaveStatus(null), 3000); // Clear status message after 3 seconds
+        }
+    };
+    
+    // Available types for the user to select
+    const availableTypes = Object.values(Type).filter(
+      type => ![Type.TYPE_UNSPECIFIED, Type.NULL].includes(type)
+    );
+
+    return (
+      <div>
+        <div className="admin-header">
+          <h2>{t('schemaSettingsSection')}</h2>
+        </div>
+        <div className="admin-card">
+          <div className="admin-card-header">
+            <h3>{t('schemaSettingsSection')}</h3>
+          </div>
+          <div className="admin-card-body">
+            <p className="settings-description">{t('schemaDescription')}</p>
+            <div className="schema-builder-table-container">
+              <table className="admin-table schema-builder-table">
+                <thead>
+                  <tr>
+                    <th>{t('fieldNameLabel')}</th>
+                    <th>{t('fieldTypeLabel')}</th>
+                    <th>{t('descriptionLabel')}</th>
+                    <th style={{ textAlign: 'center' }}>{t('primaryKeyLabel')}</th>
+                    <th style={{ textAlign: 'center' }}>{t('nullableLabel')}</th>
+                    <th>{t('actionsLabel')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {localSchema.map((field, index) => (
+                    <tr key={index}>
+                      <td>
+                        <input
+                          type="text"
+                          value={field.name}
+                          onChange={(e) => handleFieldChange(index, 'name', e.target.value)}
+                          placeholder={t('fieldNameLabel')}
+                        />
+                      </td>
+                      <td>
+                        <select
+                          value={field.type}
+                          onChange={(e) => handleFieldChange(index, 'type', e.target.value as Type)}
+                        >
+                          {availableTypes.map(type => (
+                            <option key={type} value={type}>{type}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          value={field.description}
+                          onChange={(e) => handleFieldChange(index, 'description', e.target.value)}
+                          placeholder={t('descriptionLabel')}
+                        />
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={field.isPrimaryKey}
+                          onChange={(e) => handleFieldChange(index, 'isPrimaryKey', e.target.checked)}
+                        />
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={field.nullable}
+                          onChange={(e) => handleFieldChange(index, 'nullable', e.target.checked)}
+                        />
+                      </td>
+                      <td>
+                        <button type="button" className="delete-btn" onClick={() => deleteField(index)} aria-label={`Delete field ${field.name}`}>&times;</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="schema-builder-controls">
+                <button type="button" onClick={addField} className="admin-button-secondary">{t('addFieldButton')}</button>
+                <div className="save-action">
+                    {saveStatus === 'success' && <span className="save-message success">{t('schemaSavedSuccess')}</span>}
+                    {saveStatus === 'error' && <span className="save-message error">{t('errorSavingSchema')}</span>}
+                    <button type="button" onClick={handleSave} disabled={saving} className="admin-button">
+                        {saving ? t('savingSchemaButton') : t('saveSchemaButton')}
+                    </button>
+                </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+};
 
 const ConfigurationSettingsSection = ({ t, theme, setTheme }: { t: TFunction, theme: string, setTheme: (theme: string) => void }) => {
     return (
