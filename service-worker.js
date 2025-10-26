@@ -5,7 +5,7 @@
 import { GoogleGenAI } from 'https://esm.sh/@google/genai@^0.7.0';
 
 const DB_NAME = 'JudgmentCaseDB';
-const DB_VERSION = 3;
+const DB_VERSION = 5;
 const STORE_NAME = 'cases';
 const LOG_STORE_NAME = 'audit_logs';
 
@@ -23,7 +23,15 @@ const Type = {
 
 const openDB = () => new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    // Upgrades are handled by the main thread, so onupgradeneeded is not required here.
+    request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+        }
+        if (!db.objectStoreNames.contains(LOG_STORE_NAME)) {
+            db.createObjectStore(LOG_STORE_NAME, { keyPath: 'id', autoIncrement: true });
+        }
+    };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
 });
@@ -64,11 +72,10 @@ const convertEditableSchemaToGemini = (editableSchema) => {
 
 const classifyError = (err, rawResponse, errorTemplates) => {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    // Simplified classification for the background task as detailed info is in the main thread
+    // This returns the simple/legacy error format, which the main thread's ResultCard can handle as a fallback.
     return {
         title: errorTemplates.title,
         message: errorTemplates.message(errorMessage),
-        suggestion: errorTemplates.suggestion,
         raw: rawResponse || errorMessage,
     };
 };
@@ -93,7 +100,8 @@ self.onmessage = async (event) => {
                 const prompt = `Analyze the following legal case text in its original Arabic language from Saudi Arabia and extract the specified information in JSON format according to the provided schema. For any fields that expect long-form text (like facts, reasons, rulings), use simple markdown for formatting: use '**text**' for bolding, '*text*' for italics, '~~text~~' for strikethrough, start lines with '* ' for bullet points, '1. ' for numbered lists, and use Markdown tables for tabular data. If a field is not present in the text, use null for its value. Here is the case text: \n\n${caseItem.text}`;
                 
                 const response = await ai.models.generateContent({
-                    model: 'gemini-2.5-flash',
+                    // Use Gemini Pro for more complex analysis as requested.
+                    model: 'gemini-2.5-pro',
                     contents: prompt,
                     config: {
                         responseMimeType: 'application/json',
