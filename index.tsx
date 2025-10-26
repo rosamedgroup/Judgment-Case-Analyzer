@@ -8,10 +8,10 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
-// FIX: Consolidate date-fns imports into a single statement with named imports for correctness. This resolves a runtime error where `formatDistanceToNow` was not callable due to an incorrect default import.
+// FIX: Correctly import date-fns locales using named imports to resolve a type error when passing them to 'formatDistanceToNow'.
 import { format, formatDistanceToNow, subDays, startOfDay } from 'date-fns';
-import { default as arLocale } from 'date-fns/locale/ar';
-import { default as enLocale } from 'date-fns/locale/en-US';
+import { ar as arLocale } from 'date-fns/locale/ar';
+import { enUS as enLocale } from 'date-fns/locale/en-US';
 import { judicialData } from './data.ts';
 
 
@@ -1304,6 +1304,37 @@ const ResultCard: React.FC<ResultCardProps> = ({
     );
 };
 
+const JudicialRecordsSkeletonLoader = () => {
+    return (
+        <div className="records-viewer-layout">
+            <aside className="records-sidebar skeleton-sidebar">
+                <div className="filter-group skeleton-filter-group">
+                    <div className="skeleton skeleton-input"></div>
+                </div>
+                <div className="skeleton skeleton-label" style={{ width: '40%', height: '20px', marginTop: '24px', marginBottom: '12px' }}></div>
+                {[...Array(4)].map((_, i) => (
+                    <div className="filter-group skeleton-filter-group" key={i}>
+                        <div className="skeleton skeleton-label"></div>
+                        <div className="skeleton skeleton-input"></div>
+                    </div>
+                ))}
+                <div className="skeleton skeleton-button"></div>
+            </aside>
+            <main className="records-main-content skeleton-records-list">
+                {[...Array(8)].map((_, i) => (
+                    <div className="skeleton-record-card" key={i}>
+                        <div className="skeleton skeleton-title"></div>
+                        <div className="skeleton-meta-grid">
+                            <div className="skeleton skeleton-meta"></div>
+                            <div className="skeleton skeleton-meta"></div>
+                            <div className="skeleton skeleton-meta"></div>
+                        </div>
+                    </div>
+                ))}
+            </main>
+        </div>
+    );
+};
 
 const RecordDetailView = ({ record, onBack, t }: { record: any; onBack: () => void; t: TFunction }) => {
     const contentRef = useRef<HTMLDivElement>(null);
@@ -1480,7 +1511,7 @@ const JudicialRecordsViewer = ({ t }: { t: TFunction }) => {
     };
 
     if (loading) {
-        return <div className="loader"></div>;
+        return <JudicialRecordsSkeletonLoader />;
     }
 
     if (selectedRecord) {
