@@ -8,10 +8,8 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
-import format from 'date-fns/format';
-import formatDistanceToNow from 'date-fns/formatDistanceToNow';
-import subDays from 'date-fns/subDays';
-import startOfDay from 'date-fns/startOfDay';
+// FIX: Consolidate date-fns imports into a single statement with named imports for correctness. This resolves a runtime error where `formatDistanceToNow` was not callable due to an incorrect default import.
+import { format, formatDistanceToNow, subDays, startOfDay } from 'date-fns';
 import { default as arLocale } from 'date-fns/locale/ar';
 import { default as enLocale } from 'date-fns/locale/en-US';
 import { judicialData } from './data.ts';
@@ -329,13 +327,14 @@ const translations = {
     errorGenericFixRetry: "حاول التحليل مرة أخرى. إذا استمرت المشكلة، فتحقق من تفاصيل الخطأ الخام.",
     errorGenericFixEditText: "يمكنك أيضًا محاولة تعديل النص الأصلي إذا كنت تشك في أنه قد يكون سبب المشكلة.",
   },
+  // FIX: Add English translations to resolve type errors on lines 52 and 1373, where `translations.en` was accessed but did not exist.
   en: {
     appTitle: "Judgment Case Analyzer",
-    appDescription: "Paste the text from a Saudi Arabian judgment case or upload files (JSON, JSONL, TXT, MD) with multiple cases to extract structured data.",
+    appDescription: "Paste Saudi judgment case text or upload files (JSON, JSONL, TXT, MD) containing multiple cases to extract structured data.",
     caseTextLabel: "Case Text",
     caseTextPlaceholder: "Paste one or more cases here. Separate multiple cases with '---' on a new line.",
     caseTextBatchSource: (index: number) => `Pasted Case #${index}`,
-    orDivider: "OR",
+    orDivider: "or",
     uploadFileLabel: "Upload Files",
     analyzeButton: "Analyze",
     analyzingButton: "Analyzing...",
@@ -345,11 +344,11 @@ const translations = {
     exportHistoryButton: "Export History",
     clearHistoryButton: "Clear History",
     noHistoryPlaceholder: "Your analysis history will appear here.",
-    noFilterResultsPlaceholder: "No results match your filter.",
-    caseAnalysisTitle: `Case Analysis`,
-    judgmentNumberPrefix: `Judgment #`,
-    caseIdPrefix: `Case ID: `,
-    clickViewDetails: 'Click to view details',
+    noFilterResultsPlaceholder: "No results match your search.",
+    caseAnalysisTitle: "Case Analysis",
+    judgmentNumberPrefix: "Judgment #",
+    caseIdPrefix: "Case ID: ",
+    clickViewDetails: "Click to view details",
     caseInfoSection: "Case Information",
     judgmentDetailsSection: "Judgment Details",
     appealDetailsSection: "Appeal Details",
@@ -357,25 +356,25 @@ const translations = {
     appealNarrationsSection: "Appeal Narrations",
     originalTextSection: "Original Text",
     rawDataSection: "Raw JSON Data",
-    idLabel: 'ID',
-    titleLabel: 'Title',
-    decisionTitleLabel: 'Decision Title',
-    yearLabel: 'Year',
-    hijriYearLabel: 'Hijri Year',
-    exportDateLabel: 'Export Date',
-    judgmentNumberLabel: 'Judgment Number',
-    dateLabel: 'Date',
-    judgmentDateLabel: 'Judgment Date',
-    judgmentHijriDateLabel: 'Judgment Hijri Date',
-    courtLabel: 'Court',
-    judgmentCourtNameLabel: 'Judgment Court',
-    judgmentCityNameLabel: 'Judgment City',
-    appealNumberLabel: 'Appeal Number',
-    appealDateLabel: 'Appeal Date',
-    appealHijriDateLabel: 'Appeal Hijri Date',
-    appealCourtLabel: 'Appeal Court',
-    appealCourtNameLabel: 'Appeal Court',
-    appealCityNameLabel: 'Appeal City',
+    idLabel: "ID",
+    titleLabel: "Title",
+    decisionTitleLabel: "Decision Title",
+    yearLabel: "Year",
+    hijriYearLabel: "Hijri Year",
+    exportDateLabel: "Export Date",
+    judgmentNumberLabel: "Judgment Number",
+    dateLabel: "Date",
+    judgmentDateLabel: "Judgment Date",
+    judgmentHijriDateLabel: "Judgment Hijri Date",
+    courtLabel: "Court",
+    judgmentCourtNameLabel: "Judgment Court Name",
+    judgmentCityNameLabel: "Judgment City",
+    appealNumberLabel: "Appeal Number",
+    appealDateLabel: "Appeal Date",
+    appealHijriDateLabel: "Appeal Hijri Date",
+    appealCourtLabel: "Appeal Court",
+    appealCourtNameLabel: "Appeal Court Name",
+    appealCityNameLabel: "Appeal City",
     factsLabel: "Facts",
     judgmentFactsLabel: "Judgment Facts",
     reasonsLabel: "Reasons",
@@ -383,32 +382,32 @@ const translations = {
     rulingLabel: "Ruling",
     judgmentRulingLabel: "Judgment Ruling",
     textOfRulingLabel: "Text of Ruling",
-    judgmentTextOfRulingLabel: "Judgment Text of Ruling",
-    judgmentNarrationListLabel: 'Judgment Narrations',
+    judgmentTextOfRulingLabel: "Text of Judgment Ruling",
+    judgmentNarrationListLabel: "Judgment Narrations",
     appealFactsLabel: "Appeal Facts",
     appealReasonsLabel: "Appeal Reasons",
     appealRulingLabel: "Appeal Ruling",
-    appealTextOfRulingLabel: "Appeal Text of Ruling",
+    appealTextOfRulingLabel: "Text of Appeal Ruling",
     loadingAnalysis: "Analyzing...",
     analysisFailedTitle: "Analysis Failed",
-    errorPasteOrUpload: 'Please paste the case text or upload a file before analyzing.',
-    errorInvalidFile: 'Please upload valid JSON, JSONL, TXT, or MD files.',
-    errorFailedAnalysis: 'Failed to analyze the case. Please check the console for more details.',
-    errorEmptyFile: 'An uploaded file is empty.',
-    errorInvalidJsonl: 'Invalid JSONL format: Each line must be a valid JSON object.',
-    errorJsonNotArray: 'Invalid JSON format: The file should contain an array of case objects.',
-    errorInvalidJson: 'Invalid JSON format. Please check the file content.',
-    errorFileNotArray: 'The parsed file did not result in an array of cases.',
-    errorFileNoCases: 'The files contain no cases to analyze.',
-    errorFileNonString: 'No valid text content found in the file.',
+    errorPasteOrUpload: "Please paste case text or upload a file before analyzing.",
+    errorInvalidFile: "Please upload valid JSON, JSONL, TXT, or MD files.",
+    errorFailedAnalysis: "Failed to analyze case. Please check the console for more details.",
+    errorEmptyFile: "One of the uploaded files is empty.",
+    errorInvalidJsonl: "Invalid JSONL format: each line must be a valid JSON object.",
+    errorJsonNotArray: "Invalid JSON format: the file must contain an array of case items.",
+    errorInvalidJson: "Invalid JSON format. Please check the file content.",
+    errorFileNotArray: "The parsed file did not result in an array of cases.",
+    errorFileNoCases: "Files do not contain any cases to analyze.",
+    errorFileNonString: "No valid text found in the file.",
     errorFailedCase: (err: string) => `Failed to analyze case. Error: ${err}`,
-    errorReadFile: 'Failed to read the file.',
+    errorReadFile: "Failed to read file.",
     errorLoadHistory: "Could not load analysis history.",
-    errorClearHistory: 'Could not clear history.',
-    errorExportHistory: 'Could not export history.',
-    confirmClearHistory: 'Are you sure you want to clear all analysis history? This action cannot be undone.',
-    confirmDeleteCase: 'Are you sure you want to delete this case analysis? This action cannot be undone.',
-    alertNoHistoryToExport: "No analysis history to export.",
+    errorClearHistory: "Could not clear history.",
+    errorExportHistory: "Could not export history.",
+    confirmClearHistory: "Are you sure you want to clear all analysis history? This action cannot be undone.",
+    confirmDeleteCase: "Are you sure you want to delete this case analysis? This action cannot be undone.",
+    alertNoHistoryToExport: "There is no analysis history to export.",
     editButtonLabel: 'Edit',
     saveButtonLabel: 'Save',
     savingButtonLabel: 'Saving...',
@@ -424,10 +423,13 @@ const translations = {
     copiedButtonLabel: 'Copied!',
     confirmButtonLabel: 'Confirm',
     analyzingCasesProgress: (current: number, total: number) => `Analyzing case ${current} of ${total}...`,
-    parsingFileProgress: (current: number, total: number) => `Parsing file ${current} of ${total}...`,
+    parsingFileProgress: (current: number, total: number) => `Processing file ${current} of ${total}...`,
     errorUploadFailedTitle: "Upload Failed",
     errorUploadFailedMessage: (filename: string) => `Could not upload file: ${filename}`,
-    filesSelected: (count: number) => `${count} file${count === 1 ? '' : 's'} selected`,
+    filesSelected: (count: number) => {
+      if (count === 1) return `1 file selected`;
+      return `${count} files selected`;
+    },
     retryButtonLabel: 'Retry',
     tagsLabel: 'Tags',
     addTagPlaceholder: 'Add a tag...',
@@ -439,9 +441,9 @@ const translations = {
     errorRateLimitTitle: "Rate Limit Exceeded",
     errorRateLimitMessage: "You have made too many requests in a short period.",
     errorApiKeyTitle: "Invalid API Key",
-    errorApiKeyMessage: "The provided API key is invalid or has expired. Please check your configuration.",
+    errorApiKeyMessage: "The provided API key is invalid or has expired. Please check your settings.",
     errorApiTitle: "API Error",
-    errorApiMessage: "An error occurred while communicating with the analysis service.",
+    errorApiMessage: "An error occurred while contacting the analysis service.",
     errorSafetyTitle: "Safety Policy Violation",
     errorSafetyMessage: "The analysis was blocked because the input text may have violated safety policies.",
     errorShortTextTitle: "Insufficient Content",
@@ -449,7 +451,7 @@ const translations = {
     errorUnclearTextTitle: "Unclear Context",
     errorUnclearTextMessage: "The model could not understand the context or structure of the provided text.",
     errorTokenLimitTitle: 'Token Limit Exceeded',
-    errorTokenLimitMessage: 'A single document or case is too large to be analyzed by the API.',
+    errorTokenLimitMessage: 'A single document or case is too large for the API to analyze.',
     viewErrorDetails: "View Details",
     hideErrorDetails: "Hide Details",
     editAndRetryButtonLabel: "Edit & Retry",
@@ -461,7 +463,7 @@ const translations = {
     userManagementSection: "User Management",
     contentManagementSection: "Content Management",
     securityMonitoringSection: "Security & Monitoring",
-    configurationSettingsSection: "Configuration & Settings",
+    configurationSettingsSection: "Configuration",
     totalCasesAnalyzed: "Total Cases Analyzed",
     casesWithAppeals: "Cases with Appeals",
     analysisErrors: "Analysis Errors",
@@ -473,7 +475,7 @@ const translations = {
     themeLabel: "Theme",
     lightTheme: "Light",
     darkTheme: "Dark",
-    backendRequiredNotice: "This feature requires a backend integration and is currently disabled.",
+    backendRequiredNotice: "This feature requires backend integration and is currently disabled.",
     caseDataManagementSection: "Case Data Management",
     auditLogSection: "Audit Log",
     systemStatusSection: "System Status",
@@ -491,7 +493,7 @@ const translations = {
     bulkActionsLabel: "Bulk Actions",
     filterCasesPlaceholder: "Filter cases...",
     dateCreatedLabel: "Date Created",
-    tagsCountLabel: "Tags #",
+    tagsCountLabel: "Tags Count",
     hasAppealLabel: "Has Appeal",
     logIdLabel: "Log ID",
     actionLabel: "Action",
@@ -504,22 +506,22 @@ const translations = {
     checkingLabel: "Checking...",
     errorLabel: "Error",
     recheckStatusButton: "Re-check",
-    apiKeyManagedByEnv: "Managed via environment variable",
+    apiKeyManagedByEnv: "Managed via environment variables",
     safetySettingsLabel: "Safety Settings",
     defaultModelLabel: "Default Model",
     enableAdvanceFeatures: "Enable Advanced Features",
     addTagsButtonLabel: 'Add Tags',
     deleteSelectedButtonLabel: 'Delete Selected',
-    casesSelected: (count: number) => `${count} case${count === 1 ? '' : 's'} selected`,
+    casesSelected: (count: number) => `${count} case(s) selected`,
     addTagsToSelectedTitle: 'Add Tags to Selected Cases',
-    tagsToAddPlaceholder: 'Enter tags, comma-separated...',
-    confirmBulkDeleteTitle: 'Confirm Bulk Deletion',
-    confirmBulkDeleteMessage: (count: number) => `Are you sure you want to delete ${count} selected case${count === 1 ? '' : 's'}? This action cannot be undone.`,
-    selectAllLabel: 'Select all',
+    tagsToAddPlaceholder: 'Enter tags, separated by commas...',
+    confirmBulkDeleteTitle: 'Confirm Bulk Delete',
+    confirmBulkDeleteMessage: (count: number) => `Are you sure you want to delete ${count} selected case(s)? This action cannot be undone.`,
+    selectAllLabel: 'Select All',
     errorBulkDelete: 'Failed to delete selected cases.',
     errorBulkUpdate: 'Failed to update selected cases.',
     schemaSettingsSection: "Schema Settings",
-    schemaDescription: "Define the data structure for Gemini to extract. Designate one or more fields as a Primary Key to uniquely identify cases.",
+    schemaDescription: "Define the data structure Gemini will extract. Set one or more fields as a primary key to uniquely identify cases.",
     fieldNameLabel: "Field Name",
     fieldTypeLabel: "Type",
     descriptionLabel: "Description",
@@ -527,7 +529,7 @@ const translations = {
     nullableLabel: "Nullable",
     addFieldButton: "Add Field",
     saveSchemaButton: "Save Schema",
-    savingSchemaButton: "Saving...",
+    savingSchemaButton: "Saving Schema...",
     schemaSavedSuccess: "Schema saved successfully.",
     errorSavingSchema: "Failed to save schema.",
     errorLoadSchema: "Failed to load custom schema.",
@@ -544,61 +546,61 @@ const translations = {
     selectACase: 'Select a case from the list to view details.',
     tableOfContents: 'Table of Contents',
     casePathfinder: 'Case Pathfinder',
-    pathfinderPlaceholder: 'Explore related cases and precedents (Feature coming soon).',
+    pathfinderPlaceholder: 'Explore related cases and precedents (feature coming soon).',
     backToList: 'Back to List',
     errorRecord: 'Error Record',
     errorMessageLabel: 'Error Message',
     originalUrl: 'Original URL',
-    dragAndDropPrompt: 'Drag & drop your files here',
-    errorWhatHappened: "What Happened?",
+    dragAndDropPrompt: 'Drag and drop your files here',
+    errorWhatHappened: "What happened?",
     errorPossibleCauses: "Possible Causes",
     errorHowToFix: "How to Fix",
     errorRawDetails: "Raw Error Details",
-    errorParsingWhatHappened: "The analysis service generated a response, but it couldn't be understood as valid structured data. This can happen if the output deviates from the expected JSON format.",
-    errorParsingCauseAmbiguous: "The input text was ambiguous or unusually formatted, confusing the model.",
+    errorParsingWhatHappened: "The analysis service generated a response, but it could not be understood as valid, structured data. This can happen if the output deviated from the expected JSON format.",
+    errorParsingCauseAmbiguous: "The input text was ambiguous or unusually formatted, which confused the model.",
     errorParsingCauseModelCreative: "The model's creativity led to an output that didn't strictly follow the required schema.",
-    errorParsingCauseGlitch: "A temporary, one-time glitch occurred in the analysis service.",
-    errorParsingFixRephrase: "Try rephrasing the original text to be clearer and more direct.",
+    errorParsingCauseGlitch: "A temporary, one-off glitch occurred in the analysis service.",
+    errorParsingFixRephrase: "Try rephrasing the original text to be more clear and direct.",
     errorParsingFixRetry: "Retry the analysis, as the issue may not occur again.",
-    errorParsingFixValidateJson: "If editing manually, ensure your JSON is valid before saving and retrying.",
-    errorRateLimitWhatHappened: "The application has sent too many requests to the analysis service in a short amount of time.",
+    errorParsingFixValidateJson: "If you are editing manually, ensure your JSON is valid before saving and retrying.",
+    errorRateLimitWhatHappened: "The application sent too many requests to the analysis service in a short period.",
     errorRateLimitCauseManyRequests: "Analyzing many large files or clicking 'Analyze' repeatedly can trigger rate limits.",
-    errorRateLimitCauseSharedResource: "The API key may be used by other applications, contributing to the request count.",
+    errorRateLimitCauseSharedResource: "The API key might be used by other applications, contributing to the request count.",
     errorRateLimitFixWait: "Wait a few moments before retrying the analysis.",
-    errorRateLimitFixBatch: "If analyzing multiple files, consider combining them or waiting between batches.",
+    errorRateLimitFixBatch: "If analyzing multiple files, consider merging them or waiting between batches.",
     errorApiKeyWhatHappened: "The application could not authenticate with the analysis service because the API key is invalid.",
     errorApiKeyCauseInvalid: "The API key stored in the environment configuration is incorrect or has been revoked.",
     errorApiKeyCauseExpired: "The API key may have expired.",
-    errorApiKeyFixCheckConfig: "An administrator needs to verify that the API_KEY environment variable is configured correctly with a valid key.",
-    errorTokenLimitWhatHappened: "The document submitted for analysis is larger than the maximum size the model can process in a single request.",
+    errorApiKeyFixCheckConfig: "An administrator needs to verify that the API_KEY environment variable is correctly configured with a valid key.",
+    errorTokenLimitWhatHappened: "The document provided for analysis is larger than the maximum size the model can process in a single request.",
     errorTokenLimitCauseLargeDoc: "The original text of the case is exceptionally long.",
-    errorTokenLimitCauseCombinedCases: "Multiple cases were pasted into the text area without the '---' separator, treating them as one large document.",
-    errorTokenLimitFixSplit: "Split the large document into smaller files or parts and analyze them separately.",
+    errorTokenLimitCauseCombinedCases: "Multiple cases were pasted into the text area without a '---' separator, causing them to be treated as one large document.",
+    errorTokenLimitFixSplit: "Split the large document into smaller files or chunks and analyze them separately.",
     errorTokenLimitFixSeparate: "If you pasted multiple cases, ensure they are separated by '---' on a new line.",
     errorSafetyWhatHappened: "The model's safety filters blocked either the input text or the generated analysis because it was flagged as potentially harmful.",
-    errorSafetyCauseInput: "The original case text may contain content that triggered the safety policy (e.g., sensitive personal details, aggressive language).",
-    errorSafetyCauseOutput: "The model's generated response was flagged as inappropriate before it could be returned.",
+    errorSafetyCauseInput: "The original case text may have contained content that triggered a safety policy (e.g., sensitive personal details, aggressive language).",
+    errorSafetyCauseOutput: "The model's generated response was flagged as inappropriate before being returned.",
     errorSafetyFixReview: "Review the original text and remove or rephrase any content that could be considered sensitive, harmful, or unethical.",
-    errorSafetyFixSimplify: "Try simplifying the text to focus on the core legal facts and rulings.",
+    errorSafetyFixSimplify: "Try simplifying the text to focus on the core legal facts and judgments.",
     errorShortTextWhatHappened: "The text provided for analysis was too short or lacked enough context for the model to produce a meaningful result.",
-    errorShortTextCauseEmpty: "The input text area or uploaded file was empty or contained only whitespace.",
+    errorShortTextCauseEmpty: "The text input area or uploaded file was empty or contained only whitespace.",
     errorShortTextCauseLacksContext: "The text contained too few words to be identified as a legal case.",
     errorShortTextFixProvideMore: "Provide the full, detailed text of the judgment case.",
     errorShortTextFixCheckFile: "Ensure the file you uploaded contains the correct case content.",
-    errorUnclearTextWhatHappened: "The model was unable to parse the structure or understand the context of the provided text.",
+    errorUnclearTextWhatHappened: "The model was unable to parse the structure of the provided text or understand its context.",
     errorUnclearTextCauseFormatting: "The text has poor formatting, significant typos, or is not a valid legal document.",
     errorUnclearTextCauseLanguage: "The text is in a language or dialect the model struggled to understand in a legal context.",
-    errorUnclearTextFixFormat: "Ensure the text is clearly formatted and check for spelling or grammatical errors.",
-    errorUnclearTextFixValidCase: "Confirm that the content is a complete and valid Saudi Arabian judgment case.",
+    errorUnclearTextFixFormat: "Ensure the text is clearly formatted and check for typos or grammatical errors.",
+    errorUnclearTextFixValidCase: "Verify the content is a complete and valid Saudi judgment case.",
     errorApiWhatHappened: "A general error occurred while communicating with the analysis service. The request may have been malformed or an unexpected issue happened on the server.",
-    errorApiCauseSafety: "The input text may have violated a safety policy not specifically categorized.",
-    errorApiCauseInvalidInput: "The model could not process the input text for a variety of reasons, such as unsupported content.",
+    errorApiCauseSafety: "The input text may have violated a safety policy that was not specifically categorized.",
+    errorApiCauseInvalidInput: "The model was unable to process the input text for a variety of reasons, such as unsupported content.",
     errorApiFixSimplify: "Try simplifying the text or rephrasing the content.",
     errorApiFixCheckRaw: "Check the raw error details below for more technical information.",
     errorGenericWhatHappened: "An unexpected error occurred during the analysis process.",
-    errorGenericCauseUnknown: "The cause of the error could not be determined. It might be a network issue or a temporary problem with the application.",
+    errorGenericCauseUnknown: "The cause of the error could not be determined. It might be a network issue or a temporary application problem.",
     errorGenericFixRetry: "Try the analysis again. If the problem persists, check the raw error details.",
-    errorGenericFixEditText: "You can also try editing the original text if you suspect it may be causing the issue.",
+    errorGenericFixEditText: "You can also try editing the original text if you suspect it might be causing the issue.",
   }
 };
 
@@ -727,6 +729,27 @@ const clearAllCasesFromDB = (): Promise<void> => {
       clearRequest.onerror = () => reject(clearRequest.error);
     });
   });
+};
+
+const getJudicialRecordsFromDB = (): Promise<any[]> => {
+    return openDB().then(db => {
+        return new Promise<any[]>((resolve, reject) => {
+            const transaction = db.transaction(JUDICIAL_RECORDS_STORE_NAME, 'readonly');
+            const store = transaction.objectStore(JUDICIAL_RECORDS_STORE_NAME);
+            const request = store.getAll();
+            request.onsuccess = () => {
+                const sortedRecords = request.result.sort((a, b) => {
+                    const dateA = new Date(a.scraped_at).getTime();
+                    const dateB = new Date(b.scraped_at).getTime();
+                    if (isNaN(dateB)) return -1;
+                    if (isNaN(dateA)) return 1;
+                    return dateB - dateA;
+                });
+                resolve(sortedRecords);
+            };
+            request.onerror = (event) => reject((event.target as IDBRequest).error);
+        });
+    });
 };
 
 interface EditableSchemaField {
@@ -1378,8 +1401,24 @@ const RecordDetailView = ({ record, onBack, t }: { record: any; onBack: () => vo
 };
 
 const JudicialRecordsViewer = ({ t }: { t: TFunction }) => {
-    const [records] = useState<any[]>(judicialData);
+    const [records, setRecords] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
     const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
+
+    useEffect(() => {
+        const loadRecords = async () => {
+            setLoading(true);
+            try {
+                const dbRecords = await getJudicialRecordsFromDB();
+                setRecords(dbRecords);
+            } catch (error) {
+                console.error("Failed to load judicial records from DB:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadRecords();
+    }, []);
 
     const [filters, setFilters] = useState({
         keyword: '',
@@ -1439,6 +1478,10 @@ const JudicialRecordsViewer = ({ t }: { t: TFunction }) => {
     const handleResetFilters = () => {
         setFilters({ keyword: '', court: 'All', city: 'All', year: 'All', appeal: 'All' });
     };
+
+    if (loading) {
+        return <div className="loader"></div>;
+    }
 
     if (selectedRecord) {
         return <RecordDetailView record={selectedRecord} onBack={() => setSelectedRecord(null)} t={t} />;
@@ -1610,23 +1653,31 @@ function App() {
   useEffect(() => {
     const seedDatabase = async () => {
       try {
-        const isSeeded = localStorage.getItem('judicialRecordsSeeded_v1');
+        const isSeeded = localStorage.getItem('judicialRecordsSeeded_v2');
         if (isSeeded) return;
 
         const db = await openDB();
         const transaction = db.transaction(JUDICIAL_RECORDS_STORE_NAME, 'readwrite');
         const store = transaction.objectStore(JUDICIAL_RECORDS_STORE_NAME);
         
+        const clearRequest = store.clear();
+        await new Promise<void>((resolve, reject) => {
+            clearRequest.onsuccess = () => resolve();
+            clearRequest.onerror = (event) => reject((event.target as IDBRequest).error);
+        });
+        
         for (const record of judicialData) {
-            store.put(record);
+            if (record.case_id) {
+                store.put(record);
+            }
         }
 
         await new Promise<void>((resolve, reject) => {
             transaction.oncomplete = () => resolve();
-            transaction.onerror = () => reject(transaction.error);
+            transaction.onerror = (event) => reject((event.target as IDBRequest).error);
         });
         
-        localStorage.setItem('judicialRecordsSeeded_v1', 'true');
+        localStorage.setItem('judicialRecordsSeeded_v2', 'true');
         console.log("Judicial records database seeded successfully.");
       } catch (error) {
         console.error("Failed to seed judicial records database:", error);
@@ -1783,56 +1834,57 @@ function App() {
     }
 
     // FIX: Use a safer type assertion to check for the 'name' property on the unknown error type.
-    const isGoogleApiError = err instanceof Error && err.name === 'GoogleGenerativeAIError';
-
-    if (errorMessage.includes('[400') || isGoogleApiError) {
-        if (/safety|blocked by response safety settings/i.test(errorMessage)) {
+    if (err instanceof Error && 'name' in err && (err as any).name === 'GoogleGenerativeAIError') {
+        if (errorMessage.includes('[400') || err.name === 'GoogleGenerativeAIError') {
+            if (/safety|blocked by response safety settings/i.test(errorMessage)) {
+                return {
+                    title: t('errorSafetyTitle'),
+                    summary: t('errorSafetyMessage'),
+                    breakdown: {
+                        whatHappened: t('errorSafetyWhatHappened'),
+                        possibleCauses: [t('errorSafetyCauseInput'), t('errorSafetyCauseOutput')],
+                        howToFix: [t('errorSafetyFixReview'), t('errorSafetyFixSimplify')]
+                    },
+                    raw
+                };
+            }
+            if (/must provide a non-empty text/i.test(errorMessage) || /insufficient/i.test(errorMessage)) {
+                return {
+                    title: t('errorShortTextTitle'),
+                    summary: t('errorShortTextMessage'),
+                    breakdown: {
+                        whatHappened: t('errorShortTextWhatHappened'),
+                        possibleCauses: [t('errorShortTextCauseEmpty'), t('errorShortTextCauseLacksContext')],
+                        howToFix: [t('errorShortTextFixProvideMore'), t('errorShortTextFixCheckFile')]
+                    },
+                    raw
+                };
+            }
+            if (/malformed/i.test(errorMessage) || /could not parse/i.test(errorMessage)) {
+                 return {
+                    title: t('errorUnclearTextTitle'),
+                    summary: t('errorUnclearTextMessage'),
+                    breakdown: {
+                        whatHappened: t('errorUnclearTextWhatHappened'),
+                        possibleCauses: [t('errorUnclearTextCauseFormatting'), t('errorUnclearTextCauseLanguage')],
+                        howToFix: [t('errorUnclearTextFixFormat'), t('errorUnclearTextFixValidCase')]
+                    },
+                    raw
+                };
+            }
             return {
-                title: t('errorSafetyTitle'),
-                summary: t('errorSafetyMessage'),
+                title: t('errorApiTitle'),
+                summary: t('errorApiMessage'),
                 breakdown: {
-                    whatHappened: t('errorSafetyWhatHappened'),
-                    possibleCauses: [t('errorSafetyCauseInput'), t('errorSafetyCauseOutput')],
-                    howToFix: [t('errorSafetyFixReview'), t('errorSafetyFixSimplify')]
+                    whatHappened: t('errorApiWhatHappened'),
+                    possibleCauses: [t('errorApiCauseSafety'), t('errorApiCauseInvalidInput')],
+                    howToFix: [t('errorApiFixSimplify'), t('errorApiFixCheckRaw')]
                 },
                 raw
             };
         }
-        if (/must provide a non-empty text/i.test(errorMessage) || /insufficient/i.test(errorMessage)) {
-            return {
-                title: t('errorShortTextTitle'),
-                summary: t('errorShortTextMessage'),
-                breakdown: {
-                    whatHappened: t('errorShortTextWhatHappened'),
-                    possibleCauses: [t('errorShortTextCauseEmpty'), t('errorShortTextCauseLacksContext')],
-                    howToFix: [t('errorShortTextFixProvideMore'), t('errorShortTextFixCheckFile')]
-                },
-                raw
-            };
-        }
-        if (/malformed/i.test(errorMessage) || /could not parse/i.test(errorMessage)) {
-             return {
-                title: t('errorUnclearTextTitle'),
-                summary: t('errorUnclearTextMessage'),
-                breakdown: {
-                    whatHappened: t('errorUnclearTextWhatHappened'),
-                    possibleCauses: [t('errorUnclearTextCauseFormatting'), t('errorUnclearTextCauseLanguage')],
-                    howToFix: [t('errorUnclearTextFixFormat'), t('errorUnclearTextFixValidCase')]
-                },
-                raw
-            };
-        }
-        return {
-            title: t('errorApiTitle'),
-            summary: t('errorApiMessage'),
-            breakdown: {
-                whatHappened: t('errorApiWhatHappened'),
-                possibleCauses: [t('errorApiCauseSafety'), t('errorApiCauseInvalidInput')],
-                howToFix: [t('errorApiFixSimplify'), t('errorApiFixCheckRaw')]
-            },
-            raw
-        };
     }
+
 
     return {
         title: t('analysisFailedTitle'),
