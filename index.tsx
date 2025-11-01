@@ -9,7 +9,11 @@ import './index.css';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
 // FIX: Correctly import date-fns locales using named imports to resolve a type error when passing them to 'formatDistanceToNow'.
-import { format, formatDistanceToNow, subDays, startOfDay } from 'date-fns';
+// FIX: Use specific sub-path imports for date-fns functions to resolve module resolution issues.
+import { format } from 'date-fns/format';
+import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
+import { subDays } from 'date-fns/subDays';
+import { startOfDay } from 'date-fns/startOfDay';
 import { ar as arLocale } from 'date-fns/locale/ar';
 import { enUS as enLocale } from 'date-fns/locale/en-US';
 import { judicialData } from './data.ts';
@@ -763,15 +767,43 @@ type EditableSchema = EditableSchemaField[];
 
 const SCHEMA_LOCALSTORAGE_KEY = 'judgment-analyzer-custom-schema';
 
+const isValidEditableSchema = (data: any): data is EditableSchema => {
+    if (!Array.isArray(data)) return false;
+    const validTypes = Object.values(Type);
+    for (const item of data) {
+        if (
+            typeof item !== 'object' ||
+            item === null ||
+            typeof item.name !== 'string' ||
+            typeof item.type !== 'string' ||
+            !validTypes.includes(item.type) ||
+            typeof item.description !== 'string' ||
+            typeof item.isPrimaryKey !== 'boolean' ||
+            typeof item.nullable !== 'boolean'
+        ) {
+            return false;
+        }
+    }
+    return true;
+};
+
 const getCustomSchemaFromLocalStorage = (): EditableSchema | null => {
     try {
         const schemaJson = localStorage.getItem(SCHEMA_LOCALSTORAGE_KEY);
         if (schemaJson) {
-            return JSON.parse(schemaJson);
+            const parsedSchema = JSON.parse(schemaJson);
+            if (isValidEditableSchema(parsedSchema)) {
+                return parsedSchema;
+            } else {
+                console.warn("Invalid schema structure in localStorage. Removing and using default.");
+                localStorage.removeItem(SCHEMA_LOCALSTORAGE_KEY);
+                return null;
+            }
         }
         return null;
     } catch (error) {
-        console.error("Failed to load custom schema from localStorage", error);
+        console.error("Failed to parse schema from localStorage. Removing and using default.", error);
+        localStorage.removeItem(SCHEMA_LOCALSTORAGE_KEY);
         return null;
     }
 };
@@ -2251,11 +2283,36 @@ function App() {
     return Array.from(tagsSet).sort();
   }, [analysisResults]);
 
+  if (view === 'admin') {
+      return (
+          <main className="container">
+              <AdminDashboard
+                  t={t}
+                  onSwitchView={() => setView('app')}
+                  allCases={analysisResults}
+                  allTags={allTags}
+                  onBulkDelete={handleBulkDeleteCases}
+                  onBulkUpdate={handleBulkUpdateCases}
+                  schema={schema}
+                  onSchemaUpdate={handleSchemaUpdate}
+              />
+              <ConfirmationDialog
+                isOpen={dialogConfig.isOpen}
+                title={dialogConfig.title}
+                message={dialogConfig.message}
+                onConfirm={() => dialogConfig.onConfirm?.()}
+                onCancel={closeDialog}
+                t={t}
+              />
+          </main>
+      );
+  }
 
   return (
     <main className="container">
       <header>
         <div className="header-top-controls">
+            <button className="admin-toggle-btn" onClick={() => setView('admin')}>{t('adminDashboardButton')}</button>
             <div className="theme-switcher">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
                 <label className="switch">
@@ -2278,9 +2335,7 @@ function App() {
         <p>{t('appDescription')}</p>
       </header>
       
-      {/* Admin View / App View Toggle would go here if implemented in UI */}
-
-      <div className="tabs-container">
+      <div className="tabs-container" role="tablist">
           <button className={`tab-button ${activeTab === 'input' ? 'active' : ''}`} onClick={() => setActiveTab('input')} id="analyze-tab" aria-controls="analyze-panel" aria-selected={activeTab === 'input'} role="tab">{t('analyzeTab')}</button>
           <button className={`tab-button ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')} id="history-tab" aria-controls="history-panel" aria-selected={activeTab === 'history'} role="tab">{t('historyTab')}</button>
           <button className={`tab-button ${activeTab === 'judicialRecords' ? 'active' : ''}`} onClick={() => setActiveTab('judicialRecords')} id="records-tab" aria-controls="records-panel" aria-selected={activeTab === 'judicialRecords'} role="tab">{t('judicialRecordsTab')}</button>
@@ -2439,6 +2494,468 @@ function App() {
     </main>
   );
 }
+
+// FIX: Add `allTags` to the function's destructured parameters to resolve a 'Cannot find name' error.
+const AdminDashboard = ({ t, onSwitchView, allCases, allTags, onBulkDelete, onBulkUpdate, schema, onSchemaUpdate }: {
+    t: TFunction;
+    onSwitchView: () => void;
+    allCases: CaseRecord[];
+    allTags: string[];
+    onBulkDelete: (ids: number[]) => void;
+    onBulkUpdate: (updates: Map<number, CaseRecord>) => void;
+    schema: EditableSchema;
+    onSchemaUpdate: (schema: EditableSchema) => Promise<void>;
+}) => {
+    const [adminSection, setAdminSection] = useState('analytics');
+
+    const sections = {
+        analytics: { label: t('analyticsSection'), icon: '📊' },
+        'case-data': { label: t('caseDataManagementSection'), icon: '🗂️' },
+        'user-management': { label: t('userManagementSection'), icon: '👥' },
+        'audit-log': { label: t('auditLogSection'), icon: '📋' },
+        'system-status': { label: t('systemStatusSection'), icon: '⚙️' },
+        'schema-settings': { label: t('schemaSettingsSection'), icon: '🧬' },
+    };
+
+    return (
+        <>
+            <header>
+                <div className="header-top-controls">
+                    <button className="admin-toggle-btn" onClick={onSwitchView}>{t('appViewButton')}</button>
+                </div>
+                <h1>{t('adminDashboardTitle')}</h1>
+            </header>
+            <div className="admin-dashboard">
+                <aside className="admin-sidebar">
+                    <nav className="admin-sidebar-nav">
+                        {Object.entries(sections).map(([key, { label, icon }]) => (
+                            <button
+                                key={key}
+                                className={adminSection === key ? 'active' : ''}
+                                onClick={() => setAdminSection(key)}
+                            >
+                                <span className="admin-nav-icon">{icon}</span> {label}
+                            </button>
+                        ))}
+                    </nav>
+                </aside>
+                <main className="admin-main-content">
+                    {adminSection === 'analytics' && <AnalyticsView allCases={allCases} allTags={allTags} t={t} />}
+                    {adminSection === 'case-data' && <CaseDataManagementView allCases={allCases} t={t} onBulkDelete={onBulkDelete} onBulkUpdate={onBulkUpdate} />}
+                    {adminSection === 'user-management' && <PlaceholderView title={t('userManagementSection')} t={t} />}
+                    {adminSection === 'audit-log' && <AuditLogView t={t} />}
+                    {adminSection === 'system-status' && <SystemStatusView t={t} />}
+                    {adminSection === 'schema-settings' && <SchemaSettingsView schema={schema} onSchemaUpdate={onSchemaUpdate} t={t} />}
+                </main>
+            </div>
+        </>
+    );
+};
+
+const AnalyticsView = ({ allCases, allTags, t }: { allCases: CaseRecord[]; allTags: string[]; t: TFunction }) => {
+    const analytics = useMemo(() => {
+        const totalCases = allCases.length;
+        const casesWithAppeals = allCases.filter(c => c.analysis?.hasAppeal).length;
+        const analysisErrors = allCases.filter(c => c.error).length;
+        const totalUniqueTags = allTags.length;
+
+        const thirtyDaysAgo = startOfDay(subDays(new Date(), 30));
+        const casesByDay = allCases.reduce((acc, curr) => {
+            if (curr.timestamp >= thirtyDaysAgo.getTime()) {
+                const day = format(new Date(curr.timestamp), 'yyyy-MM-dd');
+                acc[day] = (acc[day] || 0) + 1;
+            }
+            return acc;
+        }, {} as Record<string, number>);
+
+        const dateLabels = [...Array(30)].map((_, i) => format(subDays(new Date(), i), 'MM-dd')).reverse();
+        const dailyCounts = dateLabels.map(label => {
+            const date = new Date();
+            const [month, day] = label.split('-');
+            date.setMonth(parseInt(month) - 1, parseInt(day));
+            const formattedDate = format(date, 'yyyy-MM-dd');
+            return casesByDay[formattedDate] || 0;
+        });
+
+        return {
+            totalCases,
+            casesWithAppeals,
+            analysisErrors,
+            totalUniqueTags,
+            chartData: {
+                labels: dateLabels,
+                datasets: [{
+                    label: t('casesAnalyzedLast30Days'),
+                    data: dailyCounts,
+                    backgroundColor: 'rgba(74, 144, 226, 0.6)',
+                    borderColor: 'rgba(74, 144, 226, 1)',
+                    borderWidth: 1,
+                }]
+            },
+            doughnutData: {
+                labels: [t('withAppeal'), t('withoutAppeal')],
+                datasets: [{
+                    data: [casesWithAppeals, totalCases - casesWithAppeals],
+                    backgroundColor: ['rgba(74, 144, 226, 0.8)', 'rgba(224, 224, 224, 0.8)'],
+                    borderColor: ['rgba(74, 144, 226, 1)', 'rgba(200, 200, 200, 1)'],
+                    borderWidth: 1,
+                }]
+            }
+        };
+    }, [allCases, allTags, t]);
+
+    return (
+        <div className="analytics-view">
+            <header className="admin-header">
+                <h2>{t('analyticsSection')}</h2>
+            </header>
+            <div className="stat-cards-grid">
+                <div className="stat-card"><h4>{t('totalCasesAnalyzed')}</h4><p>{analytics.totalCases}</p></div>
+                <div className="stat-card"><h4>{t('casesWithAppeals')}</h4><p>{analytics.casesWithAppeals}</p></div>
+                <div className="stat-card"><h4>{t('analysisErrors')}</h4><p>{analytics.analysisErrors}</p></div>
+                <div className="stat-card"><h4>{t('totalUniqueTags')}</h4><p>{analytics.totalUniqueTags}</p></div>
+            </div>
+            <div className="charts-grid">
+                <div className="admin-card">
+                    <div className="admin-card-body chart-container">
+                        <h3>{t('casesAnalyzedLast30Days')}</h3>
+                        <Bar data={analytics.chartData} options={{ responsive: true, maintainAspectRatio: false }} />
+                    </div>
+                </div>
+                <div className="admin-card">
+                    <div className="admin-card-body chart-container">
+                        <h3>{t('casesByAppealStatus')}</h3>
+                        <Doughnut data={analytics.doughnutData} options={{ responsive: true, maintainAspectRatio: false }} />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const CaseDataManagementView = ({ allCases, t, onBulkDelete, onBulkUpdate }: {
+    allCases: CaseRecord[],
+    t: TFunction,
+    onBulkDelete: (ids: number[]) => void,
+    onBulkUpdate: (updates: Map<number, CaseRecord>) => void,
+}) => {
+    const [filter, setFilter] = useState('');
+    const [selectedCases, setSelectedCases] = useState<Set<number>>(new Set());
+    const [isAddTagsModalOpen, setIsAddTagsModalOpen] = useState(false);
+    const [tagsToAdd, setTagsToAdd] = useState('');
+    
+    const filteredCases = useMemo(() => {
+        const lowerFilter = filter.toLowerCase();
+        if (!lowerFilter) return allCases;
+        return allCases.filter(c =>
+            (c.analysis?.title || '').toLowerCase().includes(lowerFilter) ||
+            (c.analysis?.judgmentNumber || '').toLowerCase().includes(lowerFilter) ||
+            c.originalText.toLowerCase().includes(lowerFilter) ||
+            c.tags?.some(tag => tag.toLowerCase().includes(lowerFilter))
+        );
+    }, [allCases, filter]);
+
+    const handleSelectCase = (id: number) => {
+        setSelectedCases(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(id)) {
+                newSet.delete(id);
+            } else {
+                newSet.add(id);
+            }
+            return newSet;
+        });
+    };
+
+    const handleSelectAll = (e: ChangeEvent<HTMLInputElement>) => {
+        if (e.target.checked) {
+            setSelectedCases(new Set(filteredCases.map(c => c.id!).filter(id => id !== undefined)));
+        } else {
+            setSelectedCases(new Set());
+        }
+    };
+
+    const handleOpenAddTagsModal = () => {
+        setTagsToAdd('');
+        setIsAddTagsModalOpen(true);
+    };
+
+    const handleAddTagsToSelected = () => {
+        const tags = tagsToAdd.split(',').map(t => t.trim()).filter(Boolean);
+        if (tags.length === 0) return;
+
+        const updatedRecords = new Map<number, CaseRecord>();
+        selectedCases.forEach(id => {
+            const originalRecord = allCases.find(c => c.id === id);
+            if (originalRecord) {
+                const newTags = new Set([...(originalRecord.tags || []), ...tags]);
+                updatedRecords.set(id, { ...originalRecord, tags: Array.from(newTags) });
+            }
+        });
+        
+        onBulkUpdate(updatedRecords);
+        setIsAddTagsModalOpen(false);
+        setSelectedCases(new Set());
+    };
+
+    return (
+        <>
+            <div className="admin-card">
+                <div className="admin-card-header">
+                    <h3>{t('caseDataManagementSection')} ({filteredCases.length})</h3>
+                    {selectedCases.size > 0 ? (
+                        <div className="bulk-actions-toolbar">
+                            <span>{t('casesSelected', selectedCases.size)}</span>
+                            <div>
+                                <button onClick={handleOpenAddTagsModal} className="admin-button-secondary">{t('addTagsButtonLabel')}</button>
+                                <button onClick={() => onBulkDelete(Array.from(selectedCases))} className="admin-button-danger">{t('deleteSelectedButtonLabel')}</button>
+                            </div>
+                        </div>
+                    ) : (
+                        <input
+                            type="search"
+                            className="admin-table-filter"
+                            placeholder={t('filterCasesPlaceholder')}
+                            value={filter}
+                            onChange={e => setFilter(e.target.value)}
+                        />
+                    )}
+                </div>
+                <div className="admin-card-body--no-padding">
+                    <div className="admin-table-container">
+                        <table className="admin-table">
+                            <thead>
+                                <tr>
+                                    <th className="checkbox-cell">
+                                        <input type="checkbox" onChange={handleSelectAll} title={t('selectAllLabel')} checked={selectedCases.size > 0 && selectedCases.size === filteredCases.filter(c=>c.id).length} />
+                                    </th>
+                                    <th>{t('titleLabel')}</th>
+                                    <th>{t('dateCreatedLabel')}</th>
+                                    <th>{t('tagsCountLabel')}</th>
+                                    <th>{t('hasAppealLabel')}</th>
+                                    <th>{t('statusLabel')}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredCases.map(c => (
+                                    <tr key={c.id || c.timestamp} className={c.id !== undefined && selectedCases.has(c.id) ? 'selected' : ''}>
+                                        <td className="checkbox-cell">
+                                            {c.id !== undefined && <input type="checkbox" checked={selectedCases.has(c.id)} onChange={() => handleSelectCase(c.id!)} />}
+                                        </td>
+                                        <td>{c.analysis?.title || c.analysis?.judgmentNumber || `ID: ${c.id}`}</td>
+                                        <td>{format(new Date(c.timestamp), 'yyyy-MM-dd HH:mm')}</td>
+                                        <td><span className="code-pill">{c.tags?.length || 0}</span></td>
+                                        <td>{c.analysis?.hasAppeal ? '✅' : '❌'}</td>
+                                        <td>{c.error ? <span className="status-dot error"></span> : <span className="status-dot operational"></span>} {c.error ? t('errorLabel') : t('operationalLabel')}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {isAddTagsModalOpen && (
+                 <div className="modal-overlay">
+                    <div className="modal-content">
+                        <h3>{t('addTagsToSelectedTitle')}</h3>
+                        <div className="form-group">
+                            <label htmlFor="tags-to-add">{t('tagsLabel')}</label>
+                            <input
+                                id="tags-to-add"
+                                type="text"
+                                value={tagsToAdd}
+                                onChange={e => setTagsToAdd(e.target.value)}
+                                placeholder={t('tagsToAddPlaceholder')}
+                            />
+                        </div>
+                        <div className="modal-actions">
+                            <button className="dialog-cancel-btn" onClick={() => setIsAddTagsModalOpen(false)}>{t('cancelButtonLabel')}</button>
+                            <button className="dialog-confirm-btn" style={{backgroundColor: 'var(--primary-color)'}} onClick={handleAddTagsToSelected}>{t('addTagsButtonLabel')}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
+    );
+};
+
+const AuditLogView = ({ t }: { t: TFunction }) => {
+    const [logs, setLogs] = useState<any[]>([]);
+    useEffect(() => {
+        getLogEntries().then(setLogs);
+    }, []);
+
+    return (
+        <div className="admin-card">
+            <div className="admin-card-header"><h3>{t('auditLogSection')}</h3></div>
+            <div className="admin-card-body--no-padding">
+                <div className="admin-table-container">
+                    <table className="admin-table">
+                        <thead><tr><th>{t('actionLabel')}</th><th>{t('detailsLabel')}</th><th>{t('timestampLabel')}</th></tr></thead>
+                        <tbody>
+                            {logs.map(log => (
+                                <tr key={log.id}>
+                                    <td><span className="code-pill">{log.action}</span></td>
+                                    <td>{log.details}</td>
+                                    <td>{format(new Date(log.timestamp), 'yyyy-MM-dd HH:mm:ss')}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const SystemStatusView = ({ t }: { t: TFunction }) => {
+    const [apiStatus, setApiStatus] = useState<'operational' | 'checking'>('operational');
+    const [dbStatus] = useState<'operational'>('operational');
+
+    const handleRecheck = () => {
+        setApiStatus('checking');
+        setTimeout(() => setApiStatus('operational'), 1500);
+    };
+
+    const StatusIndicator = ({ status, text }: { status: string, text: string }) => (
+        <div className="status-indicator">
+            <span className={`status-dot ${status}`}></span>
+            <span>{text}</span>
+        </div>
+    );
+
+    return (
+        <div className="admin-card">
+            <div className="admin-card-header">
+                <h3>{t('systemStatusSection')}</h3>
+                <button className="admin-button-secondary" onClick={handleRecheck} disabled={apiStatus === 'checking'}>{t('recheckStatusButton')}</button>
+            </div>
+            <div className="admin-card-body">
+                <ul className="status-list">
+                    <li className="status-list-item">
+                        <span>{t('geminiApiLabel')}</span>
+                        <StatusIndicator status={apiStatus} text={t(`${apiStatus}Label`)} />
+                    </li>
+                    <li className="status-list-item">
+                        <span>{t('localDatabaseLabel')}</span>
+                        <StatusIndicator status={dbStatus} text={t(`${dbStatus}Label`)} />
+                    </li>
+                </ul>
+            </div>
+        </div>
+    );
+};
+
+const SchemaSettingsView = ({ schema: initialSchema, onSchemaUpdate, t }: {
+    schema: EditableSchema,
+    onSchemaUpdate: (schema: EditableSchema) => Promise<void>,
+    t: TFunction
+}) => {
+    const [schema, setSchema] = useState(initialSchema);
+    const [isSaving, setIsSaving] = useState(false);
+    const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+
+    const handleFieldChange = (index: number, field: keyof EditableSchemaField, value: any) => {
+        const newSchema = [...schema];
+        (newSchema[index] as any)[field] = value;
+        setSchema(newSchema);
+    };
+
+    const addField = () => {
+        setSchema([...schema, { name: '', type: Type.STRING, description: '', isPrimaryKey: false, nullable: true }]);
+    };
+
+    const removeField = (index: number) => {
+        setSchema(schema.filter((_, i) => i !== index));
+    };
+
+    const handleSave = async () => {
+        setIsSaving(true);
+        setSaveStatus(null);
+        try {
+            await onSchemaUpdate(schema.filter(f => f.name.trim() !== ''));
+            setSaveStatus({ type: 'success', message: t('schemaSavedSuccess') });
+        } catch (error) {
+            setSaveStatus({ type: 'error', message: t('errorSavingSchema') });
+        } finally {
+            setIsSaving(false);
+            setTimeout(() => setSaveStatus(null), 3000);
+        }
+    };
+
+    return (
+        <div className="admin-card">
+            <div className="admin-card-header"><h3>{t('schemaSettingsSection')}</h3></div>
+            <div className="admin-card-body">
+                <p className="settings-description">{t('schemaDescription')}</p>
+                <div className="schema-builder-table-container">
+                    <table className="admin-table schema-builder-table">
+                        <thead>
+                            <tr>
+                                <th>{t('fieldNameLabel')}</th>
+                                <th>{t('fieldTypeLabel')}</th>
+                                <th>{t('descriptionLabel')}</th>
+                                <th>{t('primaryKeyLabel')}</th>
+                                <th>{t('nullableLabel')}</th>
+                                <th>{t('actionsLabel')}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {schema.map((field, index) => (
+                                <tr key={index}>
+                                    <td><input type="text" value={field.name} onChange={e => handleFieldChange(index, 'name', e.target.value)} /></td>
+                                    <td>
+                                        <select value={field.type} onChange={e => handleFieldChange(index, 'type', e.target.value)}>
+                                            {/* FIX: Cast `Object.values(Type)` to `string[]` to ensure TypeScript correctly infers `type` as a string, resolving assignment errors for the key, value, and children of the option element. */}
+                                            {(Object.values(Type) as string[]).filter(t => t !== Type.TYPE_UNSPECIFIED && t !== Type.NULL).map(type => (
+                                                <option key={type} value={type}>{type}</option>
+                                            ))}
+                                        </select>
+                                    </td>
+                                    <td><input type="text" value={field.description} onChange={e => handleFieldChange(index, 'description', e.target.value)} /></td>
+                                    <td><input type="checkbox" checked={field.isPrimaryKey} onChange={e => handleFieldChange(index, 'isPrimaryKey', e.target.checked)} /></td>
+                                    <td><input type="checkbox" checked={field.nullable} onChange={e => handleFieldChange(index, 'nullable', e.target.checked)} /></td>
+                                    <td><button className="delete-btn" onClick={() => removeField(index)}>&times;</button></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="schema-builder-controls">
+                    <button className="admin-button-secondary" onClick={addField}>{t('addFieldButton')}</button>
+                    <div className="save-action">
+                        {saveStatus && <span className={`save-message ${saveStatus.type}`}>{saveStatus.message}</span>}
+                        <button className="admin-button" onClick={handleSave} disabled={isSaving}>
+                            {isSaving ? t('savingSchemaButton') : t('saveSchemaButton')}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+
+const PlaceholderView = ({ title, t }: { title: string, t: TFunction }) => {
+    return (
+        <div className="admin-card">
+            <div className="admin-card-header"><h3>{title}</h3></div>
+            <div className="admin-card-body">
+                <div className="placeholder-content with-overlay">
+                    <div className="placeholder-overlay"><span>{t('backendRequiredNotice')}</span></div>
+                    {/* Dummy content */}
+                    <h3>{t('inviteUserButton')}</h3>
+                    <div className="admin-table-container">
+                        <table className="admin-table">
+                            <thead><tr><th>{t('userLabel')}</th><th>{t('roleLabel')}</th><th>{t('lastActiveLabel')}</th><th>{t('statusLabel')}</th><th>{t('actionsLabel')}</th></tr></thead>
+                            <tbody><tr><td>admin@example.com</td><td>{t('adminLabel')}</td><td>{formatDistanceToNow(new Date())}</td><td><span className="status-dot active"></span> {t('activeLabel')}</td><td>...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const root = ReactDOM.createRoot(document.getElementById('root')!);
 root.render(
