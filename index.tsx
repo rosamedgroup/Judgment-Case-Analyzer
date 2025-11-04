@@ -262,13 +262,14 @@ const translations = {
     schemaSavedSuccess: "تم حفظ المخطط بنجاح.",
     errorSavingSchema: "فشل حفظ المخطط.",
     errorLoadSchema: "فشل تحميل المخطط المخصص.",
-    judicialRecordsTab: 'السجلات القضائية',
+    judicialRecordsTab: 'محرك بحث القضايا القانونية',
     searchByKeyword: 'ابحث بالكلمة المفتاحية...',
     filtersTitle: 'عوامل التصفية',
     filterByCourt: 'المحكمة',
     filterByCity: 'المدينة',
     filterByYear: 'السنة الهجرية',
     filterByAppeal: 'حالة الاستئناف',
+    filterByDecision: 'القرار',
     allRecords: 'الكل',
     resetFilters: 'إعادة تعيين',
     noRecordsFound: 'لم يتم العثور على سجلات قضائية.',
@@ -537,13 +538,14 @@ const translations = {
     schemaSavedSuccess: "Schema saved successfully.",
     errorSavingSchema: "Failed to save schema.",
     errorLoadSchema: "Failed to load custom schema.",
-    judicialRecordsTab: 'Judicial Records',
+    judicialRecordsTab: 'Legal Case Search',
     searchByKeyword: 'Search by keyword...',
     filtersTitle: 'Filters',
     filterByCourt: 'Court',
     filterByCity: 'City',
     filterByYear: 'Hijri Year',
     filterByAppeal: 'Appeal Status',
+    filterByDecision: 'Decision',
     allRecords: 'All',
     resetFilters: 'Reset',
     noRecordsFound: 'No judicial records found.',
@@ -1135,7 +1137,8 @@ const ResultCard: React.FC<ResultCardProps> = ({
                 <div className="section-grid-dynamic">
                     {Object.entries(fields).map(([key, value]) => (
                         <div key={key} className="field">
-                            <strong>{t(`${key}Label` as TranslationKey, key)}</strong>
+                            {/* FIX: Cast to 'any' to bypass overly strict type checking on dynamically generated translation keys. */}
+                            <strong>{t(`${key}Label` as any, key)}</strong>
                             <div className="field-value-wrapper">{renderFieldValue(value)}</div>
                         </div>
                     ))}
@@ -1463,7 +1466,7 @@ const RecordDetailView = ({ record, onBack, t }: { record: any; onBack: () => vo
     );
 };
 
-const JudicialRecordsViewer = ({ t }: { t: TFunction }) => {
+const LegalCaseSearchEngine = ({ t }: { t: TFunction }) => {
     const [records, setRecords] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
@@ -1486,32 +1489,27 @@ const JudicialRecordsViewer = ({ t }: { t: TFunction }) => {
     const [filters, setFilters] = useState({
         keyword: '',
         court: 'All',
-        city: 'All',
-        year: 'All',
-        appeal: 'All', // 'All', 'Yes', 'No'
+        decision: 'All',
     });
 
     const uniqueOptions = useMemo(() => {
         const courts = new Set<string>();
-        const cities = new Set<string>();
-        const years = new Set<number>();
+        const decisions = new Set<string>();
         records.forEach(r => {
             if (r.judgment_court_name) courts.add(r.judgment_court_name);
             if (r.appeal_court_name) courts.add(r.appeal_court_name);
-            if (r.judgment_city_name) cities.add(r.judgment_city_name);
-            if (r.appeal_city_name) cities.add(r.appeal_city_name);
-            if (r.hijri_year && r.hijri_year > 1000) years.add(r.hijri_year);
+            if (r.judgment_ruling) decisions.add(r.judgment_ruling);
+            if (r.appeal_ruling) decisions.add(r.appeal_ruling);
         });
         return {
             courts: Array.from(courts).sort(),
-            cities: Array.from(cities).sort(),
-            years: Array.from(years).sort((a, b) => b - a),
+            decisions: Array.from(decisions).sort(),
         };
     }, [records]);
 
     const filteredRecords = useMemo(() => {
         return records.filter(r => {
-            const { keyword, court, city, year, appeal } = filters;
+            const { keyword, court, decision } = filters;
             const lowerKeyword = keyword.toLowerCase();
 
             if (lowerKeyword && !(
@@ -1523,11 +1521,7 @@ const JudicialRecordsViewer = ({ t }: { t: TFunction }) => {
             )) return false;
 
             if (court !== 'All' && r.judgment_court_name !== court && r.appeal_court_name !== court) return false;
-            if (city !== 'All' && r.judgment_city_name !== city && r.appeal_city_name !== city) return false;
-            if (year !== 'All' && r.hijri_year !== parseInt(year)) return false;
-
-            if (appeal === 'Yes' && !r.has_appeal) return false;
-            if (appeal === 'No' && r.has_appeal) return false;
+            if (decision !== 'All' && r.judgment_ruling !== decision && r.appeal_ruling !== decision) return false;
             
             return true;
         });
@@ -1539,7 +1533,7 @@ const JudicialRecordsViewer = ({ t }: { t: TFunction }) => {
     };
 
     const handleResetFilters = () => {
-        setFilters({ keyword: '', court: 'All', city: 'All', year: 'All', appeal: 'All' });
+        setFilters({ keyword: '', court: 'All', decision: 'All' });
     };
 
     if (loading) {
@@ -1570,26 +1564,11 @@ const JudicialRecordsViewer = ({ t }: { t: TFunction }) => {
                         {uniqueOptions.courts.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                 </div>
-                <div className="filter-group">
-                    <label htmlFor="city-filter">{t('filterByCity')}</label>
-                    <select id="city-filter" name="city" value={filters.city} onChange={handleFilterChange}>
+                 <div className="filter-group">
+                    <label htmlFor="decision-filter">{t('filterByDecision')}</label>
+                    <select id="decision-filter" name="decision" value={filters.decision} onChange={handleFilterChange}>
                         <option value="All">{t('allRecords')}</option>
-                        {uniqueOptions.cities.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                </div>
-                <div className="filter-group">
-                    <label htmlFor="year-filter">{t('filterByYear')}</label>
-                    <select id="year-filter" name="year" value={filters.year} onChange={handleFilterChange}>
-                        <option value="All">{t('allRecords')}</option>
-                        {uniqueOptions.years.map(y => <option key={y} value={y}>{y}</option>)}
-                    </select>
-                </div>
-                <div className="filter-group">
-                    <label htmlFor="appeal-filter">{t('filterByAppeal')}</label>
-                    <select id="appeal-filter" name="appeal" value={filters.appeal} onChange={handleFilterChange}>
-                        <option value="All">{t('allRecords')}</option>
-                        <option value="Yes">{t('withAppeal')}</option>
-                        <option value="No">{t('withoutAppeal')}</option>
+                        {uniqueOptions.decisions.map(d => <option key={d} value={d}>{d}</option>)}
                     </select>
                 </div>
                 <button onClick={handleResetFilters} className="reset-filters-btn">{t('resetFilters')}</button>
@@ -1716,7 +1695,7 @@ function App() {
   useEffect(() => {
     const seedDatabase = async () => {
       try {
-        const isSeeded = localStorage.getItem('judicialRecordsSeeded_v2');
+        const isSeeded = localStorage.getItem('judicialRecordsSeeded_v3');
         if (isSeeded) return;
 
         const db = await openDB();
@@ -1740,7 +1719,7 @@ function App() {
             transaction.onerror = (event) => reject((event.target as IDBRequest).error);
         });
         
-        localStorage.setItem('judicialRecordsSeeded_v2', 'true');
+        localStorage.setItem('judicialRecordsSeeded_v3', 'true');
         console.log("Judicial records database seeded successfully.");
       } catch (error) {
         console.error("Failed to seed judicial records database:", error);
@@ -1897,7 +1876,8 @@ function App() {
     }
 
     // FIX: Use a safer type assertion to check for the 'name' property on the unknown error type.
-    if (err instanceof Error && 'name' in err && (err as any).name === 'GoogleGenerativeAIError') {
+    // FIX: Use a safer type assertion to check for the 'name' property on the unknown error type.
+    if (err instanceof Error && 'name' in err && (err as Error).name === 'GoogleGenerativeAIError') {
         if (errorMessage.includes('[400') || err.name === 'GoogleGenerativeAIError') {
             if (/safety|blocked by response safety settings/i.test(errorMessage)) {
                 return {
@@ -2479,7 +2459,7 @@ function App() {
 
       {activeTab === 'judicialRecords' && (
         <section className="output-section" id="records-panel" role="tabpanel" aria-labelledby="records-tab">
-            <JudicialRecordsViewer t={t} />
+            <LegalCaseSearchEngine t={t} />
         </section>
       )}
 
