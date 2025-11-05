@@ -8,12 +8,8 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
-// FIX: Correctly import date-fns locales using named imports to resolve a type error when passing them to 'formatDistanceToNow'.
-// FIX: Use specific sub-path imports for date-fns functions to resolve module resolution issues.
-import { format } from 'date-fns/format';
-import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
-import { subDays } from 'date-fns/subDays';
-import { startOfDay } from 'date-fns/startOfDay';
+// FIX: Unifying date-fns imports from the main package to resolve type inconsistencies with options objects like 'locale'.
+import { format, formatDistanceToNow, subDays, startOfDay } from 'date-fns';
 import { ar as arLocale } from 'date-fns/locale/ar';
 import { enUS as enLocale } from 'date-fns/locale/en-US';
 import { judicialData } from './data.ts';
@@ -331,6 +327,18 @@ const translations = {
     errorGenericCauseUnknown: "تعذر تحديد سبب الخطأ. قد تكون مشكلة في الشبكة أو مشكلة مؤقتة في التطبيق.",
     errorGenericFixRetry: "حاول التحليل مرة أخرى. إذا استمرت المشكلة، فتحقق من تفاصيل الخطأ الخام.",
     errorGenericFixEditText: "يمكنك أيضًا محاولة تعديل النص الأصلي إذا كنت تشك في أنه قد يكون سبب المشكلة.",
+    addCaseFromUrlButton: "إضافة قضية من رابط",
+    addCaseModalTitle: "إضافة قضايا جديدة من رابط",
+    addCaseModalDescription: "الصق رابطًا واحدًا أو أكثر من laws.moj.gov.sa أدناه، رابط واحد في كل سطر. سيتم جلب القضايا وتخزينها محليًا.",
+    urlInputLabel: "روابط القضايا",
+    urlInputPlaceholder: "أدخل رابطًا واحدًا في كل سطر...",
+    addButton: "إضافة القضايا",
+    addingButton: "جاري الإضافة...",
+    closeButtonLabel: "إغلاق",
+    addCaseSuccess: (caseNumber: string) => `تمت إضافة القضية ${caseNumber} بنجاح.`,
+    addCaseExists: "هذه القضية موجودة بالفعل في قاعدة البيانات.",
+    addCaseApiError: (error: string) => `فشل جلب القضية: ${error}`,
+    addCaseInvalidUrl: (url: string) => `تنسيق الرابط غير صالح: ${url}`,
   },
   // FIX: Add English translations to resolve type errors on lines 52 and 1373, where `translations.en` was accessed but did not exist.
   en: {
@@ -607,6 +615,18 @@ const translations = {
     errorGenericCauseUnknown: "The cause of the error could not be determined. It might be a network issue or a temporary application problem.",
     errorGenericFixRetry: "Try the analysis again. If the problem persists, check the raw error details.",
     errorGenericFixEditText: "You can also try editing the original text if you suspect it might be causing the issue.",
+    addCaseFromUrlButton: "Add Case by URL",
+    addCaseModalTitle: "Add New Cases from URL",
+    addCaseModalDescription: "Paste one or more URLs from laws.moj.gov.sa below, one per line. Cases will be fetched and stored locally.",
+    urlInputLabel: "Case URLs",
+    urlInputPlaceholder: "Enter one URL per line...",
+    addButton: "Add Cases",
+    addingButton: "Adding...",
+    closeButtonLabel: "Close",
+    addCaseSuccess: (caseNumber: string) => `Successfully added case ${caseNumber}.`,
+    addCaseExists: "This case already exists in the database.",
+    addCaseApiError: (error: string) => `Failed to fetch case: ${error}`,
+    addCaseInvalidUrl: (url: string) => `Invalid URL format: ${url}`,
   }
 };
 
@@ -737,6 +757,26 @@ const clearAllCasesFromDB = (): Promise<void> => {
   });
 };
 
+const addJudicialRecordToDB = (record: any): Promise<'success' | 'exists'> => {
+  return openDB().then(db => {
+    return new Promise<'success' | 'exists'>((resolve, reject) => {
+      const transaction = db.transaction(JUDICIAL_RECORDS_STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(JUDICIAL_RECORDS_STORE_NAME);
+      const getRequest = store.get(record.case_id);
+      getRequest.onsuccess = () => {
+        if (getRequest.result) {
+          resolve('exists');
+        } else {
+          const addRequest = store.add(record);
+          addRequest.onsuccess = () => resolve('success');
+          addRequest.onerror = () => reject(addRequest.error);
+        }
+      };
+      getRequest.onerror = () => reject(getRequest.error);
+    });
+  });
+};
+
 const getJudicialRecordsFromDB = (): Promise<any[]> => {
     return openDB().then(db => {
         return new Promise<any[]>((resolve, reject) => {
@@ -749,7 +789,7 @@ const getJudicialRecordsFromDB = (): Promise<any[]> => {
                     const dateB = new Date(b.scraped_at).getTime();
                     if (isNaN(dateB)) return -1;
                     if (isNaN(dateA)) return 1;
-                    return dateB - dateA;
+                    return dateB - a;
                 });
                 resolve(sortedRecords);
             };
@@ -1137,8 +1177,8 @@ const ResultCard: React.FC<ResultCardProps> = ({
                 <div className="section-grid-dynamic">
                     {Object.entries(fields).map(([key, value]) => (
                         <div key={key} className="field">
-                            {/* FIX: Cast to 'any' to bypass overly strict type checking on dynamically generated translation keys. */}
-                            <strong>{t(`${key}Label` as any, key)}</strong>
+                            {/* FIX: Cast to 'TranslationKey' to bypass overly strict type checking on dynamically generated translation keys. */}
+                            <strong>{t(`${key}Label` as TranslationKey, key)}</strong>
                             <div className="field-value-wrapper">{renderFieldValue(value)}</div>
                         </div>
                     ))}
@@ -1221,6 +1261,7 @@ const ResultCard: React.FC<ResultCardProps> = ({
                     <>
                         <div className="summary-info">
                             <h3>{record.error ? record.error.title : cardTitle}</h3>
+                            {/* FIX: Pass locale in the options object to fix a TypeScript error. Unifying date-fns imports resolves the underlying type issue. */}
                             <p title={new Date(record.timestamp).toLocaleString()}>{formatDistanceToNow(new Date(record.timestamp), { addSuffix: true, locale: dateLocale })}</p>
                         </div>
                         <div className="result-card-header-controls">
@@ -1387,7 +1428,7 @@ const RecordDetailView = ({ record, onBack, t }: { record: any; onBack: () => vo
             { rootMargin: '-20% 0px -80% 0px', threshold: 0 }
         );
 
-        const sections = contentRef.current?.querySelectorAll('section[id]');
+        const sections = contentRef.current?.querySelectorAll('details[id]');
         sections?.forEach((section) => observer.observe(section));
 
         return () => sections?.forEach((section) => observer.unobserve(section));
@@ -1414,27 +1455,36 @@ const RecordDetailView = ({ record, onBack, t }: { record: any; onBack: () => vo
                     </div>
 
                     {record.has_judgment && record.judgment_text && (
-                        <section id="judgment" className="admin-card">
-                            <div className="admin-card-header"><h3>{t('judgmentDetailsSection')}</h3></div>
+                        <details id="judgment" className="admin-card collapsible-section" open>
+                            <summary className="admin-card-header">
+                                <h3>{t('judgmentDetailsSection')}</h3>
+                                <div className="expand-indicator"></div>
+                            </summary>
                             <div className="admin-card-body" dangerouslySetInnerHTML={{ __html: record.judgment_text }} />
-                        </section>
+                        </details>
                     )}
 
                     {record.has_appeal && record.appeal_text && (
-                        <section id="appeal" className="admin-card">
-                            <div className="admin-card-header"><h3>{t('appealDetailsSection')}</h3></div>
+                        <details id="appeal" className="admin-card collapsible-section" open>
+                           <summary className="admin-card-header">
+                                <h3>{t('appealDetailsSection')}</h3>
+                                <div className="expand-indicator"></div>
+                            </summary>
                             <div className="admin-card-body" dangerouslySetInnerHTML={{ __html: record.appeal_text }} />
-                        </section>
+                        </details>
                     )}
 
                     {record.api_message && record.api_message.startsWith('خطأ') && (
-                         <section id="error" className="admin-card">
-                            <div className="admin-card-header"><h3>{t('errorRecord')}</h3></div>
+                         <details id="error" className="admin-card collapsible-section" open>
+                            <summary className="admin-card-header">
+                                <h3>{t('errorRecord')}</h3>
+                                <div className="expand-indicator"></div>
+                            </summary>
                             <div className="admin-card-body">
                                 <p><strong>{t('errorMessageLabel')}:</strong> {record.api_message}</p>
                                 <p><strong>{t('originalUrl')}:</strong> <a href={record.original_url} target="_blank" rel="noopener noreferrer">{record.original_url}</a></p>
                             </div>
-                        </section>
+                        </details>
                     )}
                 </div>
                 <aside className="record-detail-sidebar">
@@ -1466,25 +1516,148 @@ const RecordDetailView = ({ record, onBack, t }: { record: any; onBack: () => vo
     );
 };
 
+const AddCaseModal = ({ isOpen, onClose, onComplete, t }: {
+    isOpen: boolean;
+    onClose: () => void;
+    onComplete: () => void;
+    t: TFunction;
+}) => {
+    const [urls, setUrls] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [results, setResults] = useState<Array<{ url: string; status: 'success' | 'exists' | 'error'; message: string }>>([]);
+
+    const extractIdFromUrl = (url: string) => {
+        try {
+            const parts = url.split('/');
+            return parts[parts.length - 1];
+        } catch {
+            return null;
+        }
+    };
+
+    const handleAddCases = async (e: FormEvent) => {
+        e.preventDefault();
+        setIsLoading(true);
+        setResults([]);
+        
+        const urlList = urls.split('\n').map(u => u.trim()).filter(Boolean);
+        let casesAdded = false;
+
+        const urlRegex = /(https?:\/\/[^\s]+)/;
+
+        for (const rawUrl of urlList) {
+            const match = rawUrl.match(urlRegex);
+            const url = match ? match[0] : rawUrl;
+
+            const caseId = extractIdFromUrl(url);
+            if (!caseId || !url.startsWith('http')) {
+                setResults(prev => [...prev, { url: rawUrl, status: 'error', message: t('addCaseInvalidUrl', rawUrl) }]);
+                continue;
+            }
+
+            try {
+                const response = await fetch(`https://laws-gateway.moj.gov.sa/apis/legislations/v1/Judgements/get-details?id=${caseId}&lang=ar&IdentityNumber=`, {
+                    headers: { "Accept": "application/json", "languageCode": "ar" }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API responded with status ${response.status}`);
+                }
+                const data = await response.json();
+
+                if (!data.apiSuccess) {
+                    throw new Error(data.apiMessage || 'API returned an error.');
+                }
+
+                const newRecord = {
+                    ...data,
+                    case_id: caseId,
+                    original_url: url,
+                    scraped_at: new Date().toISOString(),
+                };
+
+                const dbStatus = await addJudicialRecordToDB(newRecord);
+                if (dbStatus === 'success') {
+                    setResults(prev => [...prev, { url: rawUrl, status: 'success', message: t('addCaseSuccess', data.judgmentNumber || caseId) }]);
+                    casesAdded = true;
+                } else {
+                    setResults(prev => [...prev, { url: rawUrl, status: 'exists', message: t('addCaseExists') }]);
+                }
+
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+                setResults(prev => [...prev, { url: rawUrl, status: 'error', message: t('addCaseApiError', errorMessage) }]);
+            }
+        }
+
+        if (casesAdded) {
+            onComplete();
+        }
+        setIsLoading(false);
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="add-case-title">
+            <div className="modal-content" style={{ maxWidth: '600px' }}>
+                <h3 id="add-case-title">{t('addCaseModalTitle')}</h3>
+                <p>{t('addCaseModalDescription')}</p>
+                <form onSubmit={handleAddCases}>
+                    <div className="form-group">
+                        <label htmlFor="case-urls">{t('urlInputLabel')}</label>
+                        <textarea
+                            id="case-urls"
+                            rows={8}
+                            placeholder={t('urlInputPlaceholder')}
+                            value={urls}
+                            onChange={(e) => setUrls(e.target.value)}
+                            disabled={isLoading}
+                        />
+                    </div>
+                    {results.length > 0 && (
+                        <div className="add-case-results">
+                            {results.map((res, index) => (
+                                <div key={index} className={`result-item ${res.status}`}>
+                                    <span className="result-url" title={res.url}>{res.url}</span>
+                                    <span className="result-message">{res.message}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    <div className="modal-actions">
+                        <button type="button" className="dialog-cancel-btn" onClick={onClose} disabled={isLoading}>{t('closeButtonLabel')}</button>
+                        <button type="submit" disabled={isLoading || !urls.trim()}>
+                            {isLoading ? t('addingButton') : t('addButton')}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
 const LegalCaseSearchEngine = ({ t }: { t: TFunction }) => {
     const [records, setRecords] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+    const loadRecords = useCallback(async () => {
+        setLoading(true);
+        try {
+            const dbRecords = await getJudicialRecordsFromDB();
+            setRecords(dbRecords);
+        } catch (error) {
+            console.error("Failed to load judicial records from DB:", error);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
     useEffect(() => {
-        const loadRecords = async () => {
-            setLoading(true);
-            try {
-                const dbRecords = await getJudicialRecordsFromDB();
-                setRecords(dbRecords);
-            } catch (error) {
-                console.error("Failed to load judicial records from DB:", error);
-            } finally {
-                setLoading(false);
-            }
-        };
         loadRecords();
-    }, []);
+    }, [loadRecords]);
 
     const [filters, setFilters] = useState({
         keyword: '',
@@ -1545,8 +1718,10 @@ const LegalCaseSearchEngine = ({ t }: { t: TFunction }) => {
     }
 
     return (
+        <>
         <div className="records-viewer-layout">
             <aside className="records-sidebar">
+                <button onClick={() => setIsAddModalOpen(true)} className="add-case-button">{t('addCaseFromUrlButton')}</button>
                 <div className="filter-group">
                     <input
                         type="search"
@@ -1592,6 +1767,16 @@ const LegalCaseSearchEngine = ({ t }: { t: TFunction }) => {
                 )}
             </main>
         </div>
+        <AddCaseModal 
+            isOpen={isAddModalOpen}
+            onClose={() => setIsAddModalOpen(false)}
+            onComplete={() => {
+                setIsAddModalOpen(false);
+                loadRecords();
+            }}
+            t={t}
+        />
+        </>
     );
 };
 
@@ -1875,57 +2060,54 @@ function App() {
       };
     }
 
-    // FIX: Use a safer type assertion to check for the 'name' property on the unknown error type.
-    // FIX: Use a safer type assertion to check for the 'name' property on the unknown error type.
-    if (err instanceof Error && 'name' in err && (err as Error).name === 'GoogleGenerativeAIError') {
-        if (errorMessage.includes('[400') || err.name === 'GoogleGenerativeAIError') {
-            if (/safety|blocked by response safety settings/i.test(errorMessage)) {
-                return {
-                    title: t('errorSafetyTitle'),
-                    summary: t('errorSafetyMessage'),
-                    breakdown: {
-                        whatHappened: t('errorSafetyWhatHappened'),
-                        possibleCauses: [t('errorSafetyCauseInput'), t('errorSafetyCauseOutput')],
-                        howToFix: [t('errorSafetyFixReview'), t('errorSafetyFixSimplify')]
-                    },
-                    raw
-                };
-            }
-            if (/must provide a non-empty text/i.test(errorMessage) || /insufficient/i.test(errorMessage)) {
-                return {
-                    title: t('errorShortTextTitle'),
-                    summary: t('errorShortTextMessage'),
-                    breakdown: {
-                        whatHappened: t('errorShortTextWhatHappened'),
-                        possibleCauses: [t('errorShortTextCauseEmpty'), t('errorShortTextCauseLacksContext')],
-                        howToFix: [t('errorShortTextFixProvideMore'), t('errorShortTextFixCheckFile')]
-                    },
-                    raw
-                };
-            }
-            if (/malformed/i.test(errorMessage) || /could not parse/i.test(errorMessage)) {
-                 return {
-                    title: t('errorUnclearTextTitle'),
-                    summary: t('errorUnclearTextMessage'),
-                    breakdown: {
-                        whatHappened: t('errorUnclearTextWhatHappened'),
-                        possibleCauses: [t('errorUnclearTextCauseFormatting'), t('errorUnclearTextCauseLanguage')],
-                        howToFix: [t('errorUnclearTextFixFormat'), t('errorUnclearTextFixValidCase')]
-                    },
-                    raw
-                };
-            }
+    // FIX: Refactored to simplify the type check and remove the check for the deprecated 'GoogleGenerativeAIError'.
+    if (err instanceof Error) {
+        if (/safety|blocked by response safety settings/i.test(errorMessage)) {
             return {
-                title: t('errorApiTitle'),
-                summary: t('errorApiMessage'),
+                title: t('errorSafetyTitle'),
+                summary: t('errorSafetyMessage'),
                 breakdown: {
-                    whatHappened: t('errorApiWhatHappened'),
-                    possibleCauses: [t('errorApiCauseSafety'), t('errorApiCauseInvalidInput')],
-                    howToFix: [t('errorApiFixSimplify'), t('errorApiFixCheckRaw')]
+                    whatHappened: t('errorSafetyWhatHappened'),
+                    possibleCauses: [t('errorSafetyCauseInput'), t('errorSafetyCauseOutput')],
+                    howToFix: [t('errorSafetyFixReview'), t('errorSafetyFixSimplify')]
                 },
                 raw
             };
         }
+        if (/must provide a non-empty text/i.test(errorMessage) || /insufficient/i.test(errorMessage)) {
+            return {
+                title: t('errorShortTextTitle'),
+                summary: t('errorShortTextMessage'),
+                breakdown: {
+                    whatHappened: t('errorShortTextWhatHappened'),
+                    possibleCauses: [t('errorShortTextCauseEmpty'), t('errorShortTextCauseLacksContext')],
+                    howToFix: [t('errorShortTextFixProvideMore'), t('errorShortTextFixCheckFile')]
+                },
+                raw
+            };
+        }
+        if (/malformed/i.test(errorMessage) || /could not parse/i.test(errorMessage)) {
+             return {
+                title: t('errorUnclearTextTitle'),
+                summary: t('errorUnclearTextMessage'),
+                breakdown: {
+                    whatHappened: t('errorUnclearTextWhatHappened'),
+                    possibleCauses: [t('errorUnclearTextCauseFormatting'), t('errorUnclearTextCauseLanguage')],
+                    howToFix: [t('errorUnclearTextFixFormat'), t('errorUnclearTextFixValidCase')]
+                },
+                raw
+            };
+        }
+        return {
+            title: t('errorApiTitle'),
+            summary: t('errorApiMessage'),
+            breakdown: {
+                whatHappened: t('errorApiWhatHappened'),
+                possibleCauses: [t('errorApiCauseSafety'), t('errorApiCauseInvalidInput')],
+                howToFix: [t('errorApiFixSimplify'), t('errorApiFixCheckRaw')]
+            },
+            raw
+        };
     }
 
 
@@ -2814,11 +2996,12 @@ const SystemStatusView = ({ t }: { t: TFunction }) => {
                 <ul className="status-list">
                     <li className="status-list-item">
                         <span>{t('geminiApiLabel')}</span>
-                        <StatusIndicator status={apiStatus} text={t(`${apiStatus}Label`)} />
+                        {/* FIX: Cast dynamic template literal to TranslationKey to resolve TypeScript error. */}
+                        <StatusIndicator status={apiStatus} text={t(`${apiStatus}Label` as TranslationKey)} />
                     </li>
                     <li className="status-list-item">
                         <span>{t('localDatabaseLabel')}</span>
-                        <StatusIndicator status={dbStatus} text={t(`${dbStatus}Label`)} />
+                        <StatusIndicator status={dbStatus} text={t(`${dbStatus}Label` as TranslationKey)} />
                     </li>
                 </ul>
             </div>

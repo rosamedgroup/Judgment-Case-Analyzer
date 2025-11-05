@@ -642,6 +642,20 @@ button:disabled {
   transform: rotate(-135deg);
 }
 
+.collapsible-section > summary {
+    list-style: none; /* remove default arrow */
+    cursor: pointer;
+}
+.collapsible-section > summary::-webkit-details-marker {
+    display: none; /* for chrome */
+}
+.collapsible-section > summary:hover {
+    background-color: color-mix(in srgb, var(--primary-color) 5%, transparent);
+}
+.collapsible-section[open] > summary .expand-indicator {
+    transform: rotate(-135deg);
+}
+
 .result-card-body {
   border-top: 1px solid var(--border-color);
   background-color: color-mix(in srgb, var(--background-color) 30%, var(--card-background));
@@ -1750,8 +1764,9 @@ input:checked + .slider:before { transform: translateX(20px); }
     background-color: var(--background-color);
     color: var(--text-color);
 }
-.modal-content .form-group input[type="text"] {
-    background-color: var(--card-background);
+.modal-content .form-group input[type="text"],
+.modal-content .form-group textarea {
+    background-color: var(--background-color);
 }
 .form-group.checkbox-group {
     display: flex;
@@ -1868,6 +1883,11 @@ input:checked + .slider:before { transform: translateX(20px); }
   border: 1px solid var(--border-color);
   align-self: start;
 }
+.records-sidebar .add-case-button {
+  width: 100%;
+  margin-bottom: calc(var(--spacing-unit) * 2);
+}
+
 .records-sidebar .filters-title {
   margin-top: calc(var(--spacing-unit) * 3);
   margin-bottom: calc(var(--spacing-unit) * 1.5);
@@ -1956,6 +1976,49 @@ input:checked + .slider:before { transform: translateX(20px); }
     color: var(--error-color);
 }
 
+/* Add Case Modal */
+.modal-content .add-case-results {
+  margin-top: calc(var(--spacing-unit) * 2);
+  max-height: 150px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-unit);
+}
+.add-case-results .result-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--spacing-unit);
+  padding: calc(var(--spacing-unit) * 0.5);
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+.add-case-results .result-item:not(:last-child) {
+  margin-bottom: calc(var(--spacing-unit) * 0.5);
+}
+.result-item .result-url {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: ltr;
+  text-align: left;
+}
+.result-item .result-message {
+  font-weight: 500;
+}
+.result-item.success {
+  background-color: color-mix(in srgb, var(--success-color) 10%, transparent);
+  color: var(--success-color);
+}
+.result-item.exists {
+  background-color: color-mix(in srgb, var(--text-color-secondary) 10%, transparent);
+  color: var(--text-color-secondary);
+}
+.result-item.error {
+  background-color: var(--error-background-color);
+  color: var(--error-color);
+}
+
 /* Detail View */
 .record-detail-container {
     animation: fadeIn 0.3s ease-out;
@@ -2020,7 +2083,7 @@ input:checked + .slider:before { transform: translateX(20px); }
     font-weight: 700;
     border-left-color: var(--primary-color);
 }
-.record-detail-content section {
+.record-detail-content details {
     scroll-margin-top: calc(var(--spacing-unit) * 2);
 }
 .case-pathfinder-card p {
