@@ -8,8 +8,8 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
-// FIX: Unifying date-fns imports from the main package to resolve type inconsistencies with options objects like 'locale'.
-import { format, formatDistanceToNow, subDays, startOfDay } from 'date-fns';
+// FIX: Use a namespace import for date-fns to handle module resolution issues.
+import * as dateFns from 'date-fns';
 import { ar as arLocale } from 'date-fns/locale/ar';
 import { enUS as enLocale } from 'date-fns/locale/en-US';
 import { judicialData } from './data.ts';
@@ -946,6 +946,7 @@ const parseFile = async (file: File, t: TFunction): Promise<string[]> => {
     const extractText = (item: any): string => {
         if (typeof item === 'string') return item;
         if (typeof item === 'object' && item !== null) {
+            if (item.originalText && typeof item.originalText === 'string') return item.originalText;
             if (item.text && typeof item.text === 'string') return item.text;
             if (item.content && typeof item.content === 'string') return item.content;
             if (item.body && typeof item.body === 'string') return item.body;
@@ -991,25 +992,28 @@ const parseFile = async (file: File, t: TFunction): Promise<string[]> => {
             }
         }
     } else if (lowerCaseName.endsWith('.jsonl')) {
-        try {
-            // A JSONL file is a stream of JSON objects.
-            // We'll use a robust split-and-join approach that handles pretty-printed objects.
-            const objectStrings = text.trim().split(/(?<=\})\s*(?=\{)/);
-            const jsonArrayString = `[${objectStrings.join(',')}]`;
-            const data = JSON.parse(jsonArrayString);
-
-            if (!Array.isArray(data)) {
-                // This would be very unusual for a JSONL file but is a good safeguard.
-                throw new Error(t('errorInvalidJsonl'));
+        const lines = text.trim().split('\n');
+        const data = [];
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (line) { // Skip empty lines
+                try {
+                    data.push(JSON.parse(line));
+                } catch (e) {
+                    console.error(`JSONL parsing error on line ${i + 1}:`, line, e);
+                    // Throw a more informative error without needing new translations
+                    throw new Error(`${t('errorInvalidJsonl')} (Error on line ${i + 1})`);
+                }
             }
-            
-            const cases = data.map(extractText).filter(c => c.trim());
-            if (cases.length === 0) throw new Error(t('errorFileNoCases'));
-            return cases;
-        } catch (e) {
-             console.error("JSONL parsing error:", e);
-             throw new Error(t('errorInvalidJsonl'));
         }
+
+        if (data.length === 0) {
+            throw new Error(t('errorFileNoCases'));
+        }
+        
+        const cases = data.map(extractText).filter(c => c.trim());
+        if (cases.length === 0) throw new Error(t('errorFileNonString'));
+        return cases;
     } else if (lowerCaseName.endsWith('.txt') || lowerCaseName.endsWith('.md')) {
         // Split by a clear separator: --- on its own line, or 3+ newlines.
         const cases = text.split(/\n\s*---\s*\n|\n{3,}/);
@@ -1262,7 +1266,8 @@ const ResultCard: React.FC<ResultCardProps> = ({
                         <div className="summary-info">
                             <h3>{record.error ? record.error.title : cardTitle}</h3>
                             {/* FIX: Pass locale in the options object to fix a TypeScript error. Unifying date-fns imports resolves the underlying type issue. */}
-                            <p title={new Date(record.timestamp).toLocaleString()}>{formatDistanceToNow(new Date(record.timestamp), { addSuffix: true, locale: dateLocale })}</p>
+                            {/* FIX: Use dateFns namespace. */}
+                            <p title={new Date(record.timestamp).toLocaleString()}>{dateFns.formatDistanceToNow(new Date(record.timestamp), { addSuffix: true, locale: dateLocale })}</p>
                         </div>
                         <div className="result-card-header-controls">
                             {!isEditing && record.id !== undefined && !record.error && (
@@ -1662,27 +1667,32 @@ const LegalCaseSearchEngine = ({ t }: { t: TFunction }) => {
     const [filters, setFilters] = useState({
         keyword: '',
         court: 'All',
+        year: 'All',
+        appealStatus: 'All',
         decision: 'All',
     });
 
     const uniqueOptions = useMemo(() => {
         const courts = new Set<string>();
         const decisions = new Set<string>();
+        const years = new Set<number>();
         records.forEach(r => {
             if (r.judgment_court_name) courts.add(r.judgment_court_name);
             if (r.appeal_court_name) courts.add(r.appeal_court_name);
             if (r.judgment_ruling) decisions.add(r.judgment_ruling);
             if (r.appeal_ruling) decisions.add(r.appeal_ruling);
+            if (r.hijri_year) years.add(r.hijri_year);
         });
         return {
             courts: Array.from(courts).sort(),
             decisions: Array.from(decisions).sort(),
+            years: Array.from(years).sort((a, b) => b - a),
         };
     }, [records]);
 
     const filteredRecords = useMemo(() => {
         return records.filter(r => {
-            const { keyword, court, decision } = filters;
+            const { keyword, court, decision, year, appealStatus } = filters;
             const lowerKeyword = keyword.toLowerCase();
 
             if (lowerKeyword && !(
@@ -1695,6 +1705,9 @@ const LegalCaseSearchEngine = ({ t }: { t: TFunction }) => {
 
             if (court !== 'All' && r.judgment_court_name !== court && r.appeal_court_name !== court) return false;
             if (decision !== 'All' && r.judgment_ruling !== decision && r.appeal_ruling !== decision) return false;
+            if (year !== 'All' && r.hijri_year != year) return false;
+            if (appealStatus === 'withAppeal' && !r.has_appeal) return false;
+            if (appealStatus === 'withoutAppeal' && r.has_appeal) return false;
             
             return true;
         });
@@ -1706,7 +1719,7 @@ const LegalCaseSearchEngine = ({ t }: { t: TFunction }) => {
     };
 
     const handleResetFilters = () => {
-        setFilters({ keyword: '', court: 'All', decision: 'All' });
+        setFilters({ keyword: '', court: 'All', year: 'All', appealStatus: 'All', decision: 'All' });
     };
 
     if (loading) {
@@ -1737,6 +1750,21 @@ const LegalCaseSearchEngine = ({ t }: { t: TFunction }) => {
                     <select id="court-filter" name="court" value={filters.court} onChange={handleFilterChange}>
                         <option value="All">{t('allRecords')}</option>
                         {uniqueOptions.courts.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                </div>
+                 <div className="filter-group">
+                    <label htmlFor="year-filter">{t('filterByYear')}</label>
+                    <select id="year-filter" name="year" value={filters.year} onChange={handleFilterChange}>
+                        <option value="All">{t('allRecords')}</option>
+                        {uniqueOptions.years.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                </div>
+                 <div className="filter-group">
+                    <label htmlFor="appeal-filter">{t('filterByAppeal')}</label>
+                    <select id="appeal-filter" name="appealStatus" value={filters.appealStatus} onChange={handleFilterChange}>
+                        <option value="All">{t('allRecords')}</option>
+                        <option value="withAppeal">{t('withAppeal')}</option>
+                        <option value="withoutAppeal">{t('withoutAppeal')}</option>
                     </select>
                 </div>
                  <div className="filter-group">
@@ -2721,21 +2749,25 @@ const AnalyticsView = ({ allCases, allTags, t }: { allCases: CaseRecord[]; allTa
         const analysisErrors = allCases.filter(c => c.error).length;
         const totalUniqueTags = allTags.length;
 
-        const thirtyDaysAgo = startOfDay(subDays(new Date(), 30));
+        // FIX: Use dateFns namespace.
+        const thirtyDaysAgo = dateFns.startOfDay(dateFns.subDays(new Date(), 30));
         const casesByDay = allCases.reduce((acc, curr) => {
             if (curr.timestamp >= thirtyDaysAgo.getTime()) {
-                const day = format(new Date(curr.timestamp), 'yyyy-MM-dd');
+                // FIX: Use dateFns namespace.
+                const day = dateFns.format(new Date(curr.timestamp), 'yyyy-MM-dd');
                 acc[day] = (acc[day] || 0) + 1;
             }
             return acc;
         }, {} as Record<string, number>);
 
-        const dateLabels = [...Array(30)].map((_, i) => format(subDays(new Date(), i), 'MM-dd')).reverse();
+        // FIX: Use dateFns namespace.
+        const dateLabels = [...Array(30)].map((_, i) => dateFns.format(dateFns.subDays(new Date(), i), 'MM-dd')).reverse();
         const dailyCounts = dateLabels.map(label => {
             const date = new Date();
             const [month, day] = label.split('-');
             date.setMonth(parseInt(month) - 1, parseInt(day));
-            const formattedDate = format(date, 'yyyy-MM-dd');
+            // FIX: Use dateFns namespace.
+            const formattedDate = dateFns.format(date, 'yyyy-MM-dd');
             return casesByDay[formattedDate] || 0;
         });
 
@@ -2905,7 +2937,8 @@ const CaseDataManagementView = ({ allCases, t, onBulkDelete, onBulkUpdate }: {
                                             {c.id !== undefined && <input type="checkbox" checked={selectedCases.has(c.id)} onChange={() => handleSelectCase(c.id!)} />}
                                         </td>
                                         <td>{c.analysis?.title || c.analysis?.judgmentNumber || `ID: ${c.id}`}</td>
-                                        <td>{format(new Date(c.timestamp), 'yyyy-MM-dd HH:mm')}</td>
+                                        {/* FIX: Use dateFns namespace. */}
+                                        <td>{dateFns.format(new Date(c.timestamp), 'yyyy-MM-dd HH:mm')}</td>
                                         <td><span className="code-pill">{c.tags?.length || 0}</span></td>
                                         <td>{c.analysis?.hasAppeal ? '✅' : '❌'}</td>
                                         <td>{c.error ? <span className="status-dot error"></span> : <span className="status-dot operational"></span>} {c.error ? t('errorLabel') : t('operationalLabel')}</td>
@@ -2959,7 +2992,8 @@ const AuditLogView = ({ t }: { t: TFunction }) => {
                                 <tr key={log.id}>
                                     <td><span className="code-pill">{log.action}</span></td>
                                     <td>{log.details}</td>
-                                    <td>{format(new Date(log.timestamp), 'yyyy-MM-dd HH:mm:ss')}</td>
+                                    {/* FIX: Use dateFns namespace. */}
+                                    <td>{dateFns.format(new Date(log.timestamp), 'yyyy-MM-dd HH:mm:ss')}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -3111,7 +3145,8 @@ const PlaceholderView = ({ title, t }: { title: string, t: TFunction }) => {
                     <div className="admin-table-container">
                         <table className="admin-table">
                             <thead><tr><th>{t('userLabel')}</th><th>{t('roleLabel')}</th><th>{t('lastActiveLabel')}</th><th>{t('statusLabel')}</th><th>{t('actionsLabel')}</th></tr></thead>
-                            <tbody><tr><td>admin@example.com</td><td>{t('adminLabel')}</td><td>{formatDistanceToNow(new Date())}</td><td><span className="status-dot active"></span> {t('activeLabel')}</td><td>...</td></tr></tbody>
+                            {/* FIX: Use dateFns namespace. */}
+                            <tbody><tr><td>admin@example.com</td><td>{t('adminLabel')}</td><td>{dateFns.formatDistanceToNow(new Date())}</td><td><span className="status-dot active"></span> {t('activeLabel')}</td><td>...</td></tr></tbody>
                         </table>
                     </div>
                 </div>
