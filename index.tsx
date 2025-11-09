@@ -8,8 +8,11 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
-// FIX: Use a namespace import for date-fns to handle module resolution issues.
-import * as dateFns from 'date-fns';
+// FIX: Switched to date-fns v3 submodule imports to resolve module export errors. This ensures compatibility with build tools that may not correctly handle the main package entry point.
+import { format } from 'date-fns/format';
+import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
+import { subDays } from 'date-fns/subDays';
+import { startOfDay } from 'date-fns/startOfDay';
 import { ar as arLocale } from 'date-fns/locale/ar';
 import { enUS as enLocale } from 'date-fns/locale/en-US';
 import { judicialData } from './data.ts';
@@ -259,9 +262,11 @@ const translations = {
     errorSavingSchema: "فشل حفظ المخطط.",
     errorLoadSchema: "فشل تحميل المخطط المخصص.",
     judicialRecordsTab: 'محرك بحث القضايا القانونية',
-    searchByKeyword: 'ابحث بالكلمة المفتاحية...',
+    searchByKeyword: 'ابحث بالكلمة المفتاحية',
+    searchByKeywordPlaceholder: 'مثال: عقد تجاري، إيجار',
     filtersTitle: 'عوامل التصفية',
     filterByCourt: 'المحكمة',
+    filterByCourtPlaceholder: 'مثال: المحكمة العليا',
     filterByCity: 'المدينة',
     filterByYear: 'السنة الهجرية',
     filterByAppeal: 'حالة الاستئناف',
@@ -337,10 +342,22 @@ const translations = {
     closeButtonLabel: "إغلاق",
     addCaseSuccess: (caseNumber: string) => `تمت إضافة القضية ${caseNumber} بنجاح.`,
     addCaseExists: "هذه القضية موجودة بالفعل في قاعدة البيانات.",
-    addCaseApiError: (error: string) => `فشل جلب القضية: ${error}`,
+    addCaseApiError: (error: string) => `فشل جلب القضية: حدث خطأ غير متوقع: ${error}`,
+    addCaseApiLogicError: (error: string) => `فشل جلب القضية: أبلغت الواجهة البرمجية عن مشكلة: ${error}`,
     addCaseInvalidUrl: (url: string) => `تنسيق الرابط غير صالح: ${url}`,
+    addCaseApiErrorStatus: (status: string) => `فشل جلب القضية: استجاب الخادم بخطأ (${status}).`,
+    addCaseApiErrorParse: `فشل جلب القضية: لم تكن استجابة الخادم بتنسيق قابل للقراءة.`,
+    addCaseApiErrorNetwork: `فشل جلب القضية: حدث خطأ في الشبكة. يرجى التحقق من اتصالك بالإنترنت.`,
+    searchButton: "بحث",
+    fetchingCases: "جاري جلب القضايا...",
+    fetchCasesSuccess: (count: number) => `تم جلب ${count} قضية جديدة بنجاح.`,
+    fetchCasesError: "فشل جلب السجلات القضائية من الواجهة البرمجية.",
+    noNewCasesFound: "لم يتم العثور على قضايا جديدة مطابقة لبحثك.",
+    rulingTypeElzam: "إلزام",
+    rulingTypeNoJurisdiction: "عدم اختصاص",
+    rulingTypeDismissal: "رفض",
+    rulingTypeNonAcceptance: "عدم قبول",
   },
-  // FIX: Add English translations to resolve type errors on lines 52 and 1373, where `translations.en` was accessed but did not exist.
   en: {
     appTitle: "Judgment Case Analyzer",
     appDescription: "Paste Saudi judgment case text or upload files (JSON, JSONL, TXT, MD) containing multiple cases to extract structured data.",
@@ -547,9 +564,11 @@ const translations = {
     errorSavingSchema: "Failed to save schema.",
     errorLoadSchema: "Failed to load custom schema.",
     judicialRecordsTab: 'Legal Case Search',
-    searchByKeyword: 'Search by keyword...',
+    searchByKeyword: 'Search by Keyword',
+    searchByKeywordPlaceholder: 'e.g., commercial contract, rent',
     filtersTitle: 'Filters',
-    filterByCourt: 'Court',
+    filterByCourt: 'Filter by Court',
+    filterByCourtPlaceholder: 'e.g., Supreme Court',
     filterByCity: 'City',
     filterByYear: 'Hijri Year',
     filterByAppeal: 'Appeal Status',
@@ -625,8 +644,21 @@ const translations = {
     closeButtonLabel: "Close",
     addCaseSuccess: (caseNumber: string) => `Successfully added case ${caseNumber}.`,
     addCaseExists: "This case already exists in the database.",
-    addCaseApiError: (error: string) => `Failed to fetch case: ${error}`,
+    addCaseApiError: (error: string) => `Failed to fetch case: An unexpected error occurred: ${error}`,
+    addCaseApiLogicError: (error: string) => `Failed to fetch case: The API reported an issue: ${error}`,
     addCaseInvalidUrl: (url: string) => `Invalid URL format: ${url}`,
+    addCaseApiErrorStatus: (status: string) => `Failed to fetch case: The server responded with an error (${status}).`,
+    addCaseApiErrorParse: `Failed to fetch case: The server's response was not in a readable format.`,
+    addCaseApiErrorNetwork: `Failed to fetch case: A network error occurred. Please check your internet connection.`,
+    searchButton: "Search",
+    fetchingCases: "Fetching cases...",
+    fetchCasesSuccess: (count: number) => `Successfully fetched ${count} new cases.`,
+    fetchCasesError: "Failed to fetch judicial records from API.",
+    noNewCasesFound: "No new cases found matching your search.",
+    rulingTypeElzam: "Binding",
+    rulingTypeNoJurisdiction: "No Jurisdiction",
+    rulingTypeDismissal: "Dismissal",
+    rulingTypeNonAcceptance: "Non-acceptance",
   }
 };
 
@@ -789,7 +821,7 @@ const getJudicialRecordsFromDB = (): Promise<any[]> => {
                     const dateB = new Date(b.scraped_at).getTime();
                     if (isNaN(dateB)) return -1;
                     if (isNaN(dateA)) return 1;
-                    return dateB - a;
+                    return dateB - dateA;
                 });
                 resolve(sortedRecords);
             };
@@ -1061,7 +1093,6 @@ const SummaryLoading = ({ t }: { t: TFunction }) => (
     </div>
 );
 
-// FIX: Define props as a type and use React.FC to allow React-specific props like 'key'.
 type ResultCardProps = {
     record: CaseRecord;
     onUpdate: (record: CaseRecord) => Promise<void>;
@@ -1266,8 +1297,7 @@ const ResultCard: React.FC<ResultCardProps> = ({
                         <div className="summary-info">
                             <h3>{record.error ? record.error.title : cardTitle}</h3>
                             {/* FIX: Pass locale in the options object to fix a TypeScript error. Unifying date-fns imports resolves the underlying type issue. */}
-                            {/* FIX: Use dateFns namespace. */}
-                            <p title={new Date(record.timestamp).toLocaleString()}>{dateFns.formatDistanceToNow(new Date(record.timestamp), { addSuffix: true, locale: dateLocale })}</p>
+                            <p title={new Date(record.timestamp).toLocaleString()}>{formatDistanceToNow(new Date(record.timestamp), { addSuffix: true, locale: dateLocale })}</p>
                         </div>
                         <div className="result-card-header-controls">
                             {!isEditing && record.id !== undefined && !record.error && (
@@ -1417,6 +1447,12 @@ const JudicialRecordsSkeletonLoader = () => {
     );
 };
 
+const removeHtml = (html: string | null | undefined): string => {
+    if (!html) return '';
+    // Also replacing <br /> with newlines for better formatting in <pre>
+    return html.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ');
+};
+
 const RecordDetailView = ({ record, onBack, t }: { record: any; onBack: () => void; t: TFunction }) => {
     const contentRef = useRef<HTMLDivElement>(null);
     const [activeSection, setActiveSection] = useState('');
@@ -1465,7 +1501,9 @@ const RecordDetailView = ({ record, onBack, t }: { record: any; onBack: () => vo
                                 <h3>{t('judgmentDetailsSection')}</h3>
                                 <div className="expand-indicator"></div>
                             </summary>
-                            <div className="admin-card-body" dangerouslySetInnerHTML={{ __html: record.judgment_text }} />
+                            <div className="admin-card-body">
+                                <pre className="record-text-content">{removeHtml(record.judgment_text)}</pre>
+                            </div>
                         </details>
                     )}
 
@@ -1475,7 +1513,9 @@ const RecordDetailView = ({ record, onBack, t }: { record: any; onBack: () => vo
                                 <h3>{t('appealDetailsSection')}</h3>
                                 <div className="expand-indicator"></div>
                             </summary>
-                            <div className="admin-card-body" dangerouslySetInnerHTML={{ __html: record.appeal_text }} />
+                            <div className="admin-card-body">
+                                <pre className="record-text-content">{removeHtml(record.appeal_text)}</pre>
+                            </div>
                         </details>
                     )}
 
@@ -1566,12 +1606,25 @@ const AddCaseModal = ({ isOpen, onClose, onComplete, t }: {
                 });
 
                 if (!response.ok) {
-                    throw new Error(`API responded with status ${response.status}`);
+                    const statusText = response.statusText ? `: ${response.statusText}` : '';
+                    throw new Error(`HTTP Error ${response.status}${statusText}`);
                 }
-                const data = await response.json();
+                
+                const responseText = await response.text();
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                } catch (jsonError) {
+                    console.error("Failed to parse JSON from MOJ API:", jsonError);
+                    console.error("Raw response text:", responseText);
+                    throw new Error("InvalidJSON");
+                }
+
 
                 if (!data.apiSuccess) {
-                    throw new Error(data.apiMessage || 'API returned an error.');
+                    const apiError = new Error(data.apiMessage || 'API returned a failure status.');
+                    apiError.name = 'ApiLogicError';
+                    throw apiError;
                 }
 
                 const newRecord = {
@@ -1590,8 +1643,23 @@ const AddCaseModal = ({ isOpen, onClose, onComplete, t }: {
                 }
 
             } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-                setResults(prev => [...prev, { url: rawUrl, status: 'error', message: t('addCaseApiError', errorMessage) }]);
+                const errorInstance = error instanceof Error ? error : new Error(String(error));
+                let finalMessage = '';
+                
+                if (errorInstance.name === 'TypeError') { // Network errors like "Failed to fetch"
+                    finalMessage = t('addCaseApiErrorNetwork');
+                } else if (errorInstance.message.startsWith('HTTP Error')) {
+                    const status = errorInstance.message.replace('HTTP Error ', '');
+                    finalMessage = t('addCaseApiErrorStatus', status);
+                } else if (errorInstance.message === 'InvalidJSON') {
+                    finalMessage = t('addCaseApiErrorParse');
+                } else if (errorInstance.name === 'ApiLogicError') {
+                    finalMessage = t('addCaseApiLogicError', errorInstance.message);
+                } else {
+                    // Generic fallback for any other unexpected errors.
+                    finalMessage = t('addCaseApiError', errorInstance.message);
+                }
+                setResults(prev => [...prev, { url: rawUrl, status: 'error', message: finalMessage }]);
             }
         }
 
@@ -1646,7 +1714,17 @@ const LegalCaseSearchEngine = ({ t }: { t: TFunction }) => {
     const [records, setRecords] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
-    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [isFetching, setIsFetching] = useState(false);
+    const [fetchMessage, setFetchMessage] = useState<{ type: 'success' | 'info' | 'error', text: string } | null>(null);
+
+    const [filters, setFilters] = useState({
+        keyword: '',
+        court: '',
+        city: '',
+        year: '',
+        appeal: 'all',
+        decision: 'all',
+    });
 
     const loadRecords = useCallback(async () => {
         setLoading(true);
@@ -1664,62 +1742,122 @@ const LegalCaseSearchEngine = ({ t }: { t: TFunction }) => {
         loadRecords();
     }, [loadRecords]);
 
-    const [filters, setFilters] = useState({
-        keyword: '',
-        court: 'All',
-        year: 'All',
-        appealStatus: 'All',
-        decision: 'All',
-    });
-
-    const uniqueOptions = useMemo(() => {
-        const courts = new Set<string>();
-        const decisions = new Set<string>();
-        const years = new Set<number>();
-        records.forEach(r => {
-            if (r.judgment_court_name) courts.add(r.judgment_court_name);
-            if (r.appeal_court_name) courts.add(r.appeal_court_name);
-            if (r.judgment_ruling) decisions.add(r.judgment_ruling);
-            if (r.appeal_ruling) decisions.add(r.appeal_ruling);
-            if (r.hijri_year) years.add(r.hijri_year);
-        });
-        return {
-            courts: Array.from(courts).sort(),
-            decisions: Array.from(decisions).sort(),
-            years: Array.from(years).sort((a, b) => b - a),
-        };
-    }, [records]);
-
     const filteredRecords = useMemo(() => {
         return records.filter(r => {
-            const { keyword, court, decision, year, appealStatus } = filters;
-            const lowerKeyword = keyword.toLowerCase();
+            const lowerKeyword = filters.keyword.toLowerCase().trim();
+            const lowerCourt = filters.court.toLowerCase().trim();
+            const lowerCity = filters.city.toLowerCase().trim();
+            const year = filters.year.trim();
 
             if (lowerKeyword && !(
                 (r.title?.toLowerCase() || '').includes(lowerKeyword) ||
-                (r.judgment_number?.toLowerCase() || '').includes(lowerKeyword) ||
-                (r.appeal_number?.toLowerCase() || '').includes(lowerKeyword) ||
-                (r.judgment_text?.toLowerCase() || '').includes(lowerKeyword) ||
-                (r.appeal_text?.toLowerCase() || '').includes(lowerKeyword)
+                (removeHtml(r.judgment_text)?.toLowerCase() || '').includes(lowerKeyword) ||
+                (removeHtml(r.appeal_text)?.toLowerCase() || '').includes(lowerKeyword)
             )) return false;
 
-            if (court !== 'All' && r.judgment_court_name !== court && r.appeal_court_name !== court) return false;
-            if (decision !== 'All' && r.judgment_ruling !== decision && r.appeal_ruling !== decision) return false;
-            if (year !== 'All' && r.hijri_year != year) return false;
-            if (appealStatus === 'withAppeal' && !r.has_appeal) return false;
-            if (appealStatus === 'withoutAppeal' && r.has_appeal) return false;
-            
+            if (lowerCourt && !(
+                (r.judgment_court_name?.toLowerCase() || '').includes(lowerCourt) ||
+                (r.appeal_court_name?.toLowerCase() || '').includes(lowerCourt)
+            )) return false;
+
+            if (lowerCity && !(
+                (r.judgment_city_name?.toLowerCase() || '').includes(lowerCity) ||
+                (r.appeal_city_name?.toLowerCase() || '').includes(lowerCity)
+            )) return false;
+
+            if (year && r.hijri_year?.toString() !== year) return false;
+
+            if (filters.appeal !== 'all' && ((filters.appeal === 'with') ? !r.has_appeal : r.has_appeal)) return false;
+
+            if (filters.decision !== 'all' && !(
+                r.judgment_ruling === filters.decision ||
+                r.appeal_ruling === filters.decision
+            )) return false;
+
             return true;
         });
     }, [records, filters]);
-    
+
     const handleFilterChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFilters(prev => ({ ...prev, [name]: value }));
     };
 
     const handleResetFilters = () => {
-        setFilters({ keyword: '', court: 'All', year: 'All', appealStatus: 'All', decision: 'All' });
+        setFilters({ keyword: '', court: '', city: '', year: '', appeal: 'all', decision: 'all' });
+        setFetchMessage(null);
+    };
+
+    const handleSearch = async (e: FormEvent) => {
+        e.preventDefault();
+        setIsFetching(true);
+        setFetchMessage({ type: 'info', text: t('fetchingCases') });
+
+        try {
+            const searchParams: any = {
+                SearchText: filters.keyword,
+                PageNumber: 1,
+                PageSize: 50,
+                SortBy: "Default",
+                JudgementType: 0,
+            };
+            if (filters.court) searchParams.Courts = [filters.court];
+            if (filters.city) searchParams.Cities = [filters.city];
+            if (filters.year) searchParams.HijriYear = parseInt(filters.year, 10);
+            if (filters.appeal !== 'all') searchParams.HasAppeal = filters.appeal === 'with';
+            if (filters.decision !== 'all') searchParams.Rulings = [filters.decision];
+
+            const response = await fetch('https://laws-gateway.moj.gov.sa/apis/legislations/v1/Judgements/search', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'languageCode': 'ar' },
+                body: JSON.stringify(searchParams)
+            });
+
+            if (!response.ok) {
+                throw new Error(`API Error: ${response.status} ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            if (!data.apiSuccess || !Array.isArray(data.items)) {
+                throw new Error(data.apiMessage || 'Invalid API response format');
+            }
+
+            let newCasesCount = 0;
+            for (const item of data.items) {
+                const newRecord = {
+                    ...item,
+                    case_id: item.id,
+                    original_url: `https://laws.moj.gov.sa/ar/JudicialDecisionsList/0/${item.id}`,
+                    scraped_at: new Date().toISOString(),
+                };
+                const dbStatus = await addJudicialRecordToDB(newRecord);
+                if (dbStatus === 'success') newCasesCount++;
+            }
+
+            if (newCasesCount > 0) {
+                setFetchMessage({ type: 'success', text: t('fetchCasesSuccess', newCasesCount) });
+                await loadRecords();
+            } else if (data.items.length > 0) {
+                setFetchMessage({ type: 'info', text: t('noNewCasesFound') });
+            } else {
+                setFetchMessage({ type: 'info', text: t('noRecordsFound') });
+            }
+
+        } catch (error) {
+            console.error("Failed to fetch judicial records from API:", error);
+            const errorInstance = error instanceof Error ? error : new Error(String(error));
+            let finalMessage = t('fetchCasesError');
+
+            if (errorInstance.name === 'TypeError') { // Network errors like "Failed to fetch"
+                const networkErrorPart = t('addCaseApiErrorNetwork').substring(t('addCaseApiErrorNetwork').indexOf(':') + 1).trim();
+                finalMessage = `${t('fetchCasesError')} ${networkErrorPart}`;
+            } else {
+                finalMessage = `${t('fetchCasesError')} ${errorInstance.message}`;
+            }
+            setFetchMessage({ type: 'error', text: finalMessage });
+        } finally {
+            setIsFetching(false);
+        }
     };
 
     if (loading) {
@@ -1731,80 +1869,84 @@ const LegalCaseSearchEngine = ({ t }: { t: TFunction }) => {
     }
 
     return (
-        <>
         <div className="records-viewer-layout">
             <aside className="records-sidebar">
-                <button onClick={() => setIsAddModalOpen(true)} className="add-case-button">{t('addCaseFromUrlButton')}</button>
-                <div className="filter-group">
-                    <input
-                        type="search"
-                        name="keyword"
-                        placeholder={t('searchByKeyword')}
-                        value={filters.keyword}
-                        onChange={handleFilterChange}
-                    />
-                </div>
-                <h3 className="filters-title">{t('filtersTitle')}</h3>
-                <div className="filter-group">
-                    <label htmlFor="court-filter">{t('filterByCourt')}</label>
-                    <select id="court-filter" name="court" value={filters.court} onChange={handleFilterChange}>
-                        <option value="All">{t('allRecords')}</option>
-                        {uniqueOptions.courts.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                </div>
-                 <div className="filter-group">
-                    <label htmlFor="year-filter">{t('filterByYear')}</label>
-                    <select id="year-filter" name="year" value={filters.year} onChange={handleFilterChange}>
-                        <option value="All">{t('allRecords')}</option>
-                        {uniqueOptions.years.map(y => <option key={y} value={y}>{y}</option>)}
-                    </select>
-                </div>
-                 <div className="filter-group">
-                    <label htmlFor="appeal-filter">{t('filterByAppeal')}</label>
-                    <select id="appeal-filter" name="appealStatus" value={filters.appealStatus} onChange={handleFilterChange}>
-                        <option value="All">{t('allRecords')}</option>
-                        <option value="withAppeal">{t('withAppeal')}</option>
-                        <option value="withoutAppeal">{t('withoutAppeal')}</option>
-                    </select>
-                </div>
-                 <div className="filter-group">
-                    <label htmlFor="decision-filter">{t('filterByDecision')}</label>
-                    <select id="decision-filter" name="decision" value={filters.decision} onChange={handleFilterChange}>
-                        <option value="All">{t('allRecords')}</option>
-                        {uniqueOptions.decisions.map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>
-                </div>
-                <button onClick={handleResetFilters} className="reset-filters-btn">{t('resetFilters')}</button>
+                <form onSubmit={handleSearch} className="filters-form">
+                    <h3>{t('filtersTitle')}</h3>
+                    <div className="filter-group">
+                        <label htmlFor="keyword">{t('searchByKeyword')}</label>
+                        <input type="search" id="keyword" name="keyword" placeholder={t('searchByKeywordPlaceholder')} value={filters.keyword} onChange={handleFilterChange} />
+                    </div>
+                    <div className="filter-group">
+                        <label htmlFor="court">{t('filterByCourt')}</label>
+                        <input type="search" id="court" name="court" placeholder={t('filterByCourtPlaceholder')} value={filters.court} onChange={handleFilterChange} />
+                    </div>
+                    <div className="filter-group">
+                        <label htmlFor="city">{t('filterByCity')}</label>
+                        <input type="text" id="city" name="city" placeholder={t('filterByCourtPlaceholder')} value={filters.city} onChange={handleFilterChange} />
+                    </div>
+                    <div className="filter-group">
+                        <label htmlFor="year">{t('filterByYear')}</label>
+                        <input type="number" id="year" name="year" placeholder="1445" value={filters.year} onChange={handleFilterChange} />
+                    </div>
+                    <div className="filter-group">
+                        <label htmlFor="appeal">{t('filterByAppeal')}</label>
+                        <select id="appeal" name="appeal" value={filters.appeal} onChange={handleFilterChange}>
+                            <option value="all">{t('allRecords')}</option>
+                            <option value="with">{t('withAppeal')}</option>
+                            <option value="without">{t('withoutAppeal')}</option>
+                        </select>
+                    </div>
+                    <div className="filter-group">
+                        <label htmlFor="decision">{t('filterByDecision')}</label>
+                        <select id="decision" name="decision" value={filters.decision} onChange={handleFilterChange}>
+                            <option value="all">{t('allRecords')}</option>
+                            <option value={t('rulingTypeElzam')}>{t('rulingTypeElzam')}</option>
+                            <option value={t('rulingTypeNoJurisdiction')}>{t('rulingTypeNoJurisdiction')}</option>
+                            <option value={t('rulingTypeDismissal')}>{t('rulingTypeDismissal')}</option>
+                            <option value={t('rulingTypeNonAcceptance')}>{t('rulingTypeNonAcceptance')}</option>
+                        </select>
+                    </div>
+                    <div className="filter-buttons">
+                        <button type="submit" disabled={isFetching}>{isFetching ? t('fetchingCases') : t('searchButton')}</button>
+                        <button type="button" onClick={handleResetFilters} disabled={isFetching}>{t('resetFilters')}</button>
+                    </div>
+                </form>
             </aside>
             <main className="records-main-content">
+                {fetchMessage && (
+                    <div className={`fetch-message-bar ${fetchMessage.type}`}>
+                        {fetchMessage.text}
+                    </div>
+                )}
                 {filteredRecords.length > 0 ? (
                     <div className="records-list">
                         {filteredRecords.map(record => (
                             <div key={record.case_id} className={`record-card ${record.api_message && record.api_message.startsWith('خطأ') ? 'error-record' : ''}`} onClick={() => setSelectedRecord(record)} role="button" tabIndex={0}>
-                                <h4>{record.title || t('caseAnalysisTitle')}</h4>
+                                <h4>{record.title || t('caseAnalysisTitle')} ({t('judgmentNumberPrefix')}{record.judgment_number || 'N/A'})</h4>
                                 <div className="record-card-meta">
-                                    <span>{t('courtLabel')}: {record.judgment_court_name || record.appeal_court_name || 'N/A'}</span>
-                                    <span>{t('hijriYearLabel')}: {record.hijri_year || 'N/A'}</span>
-                                    <span>{t('judgmentNumberLabel')}: {record.judgment_number || 'N/A'}</span>
+                                    <span><strong>{t('courtLabel')}:</strong> {record.judgment_court_name || 'N/A'}</span>
+                                    <span><strong>{t('dateLabel')}:</strong> {record.judgment_date?.split('T')[0] || 'N/A'}</span>
                                 </div>
+                                <details onClick={(e) => e.stopPropagation()} className="record-details-expander">
+                                    <summary>{t('clickViewDetails')}</summary>
+                                    <div className="record-details-content">
+                                        <strong>{t('factsLabel')}:</strong>
+                                        <textarea readOnly value={removeHtml(record.judgment_facts) || 'N/A'} rows={5}></textarea>
+                                        <strong>{t('reasonsLabel')}:</strong>
+                                        <textarea readOnly value={removeHtml(record.judgment_reasons) || 'N/A'} rows={5}></textarea>
+                                        <strong>{t('rulingLabel')}:</strong>
+                                        <textarea readOnly value={removeHtml(record.judgment_ruling) || 'N/A'} rows={5}></textarea>
+                                    </div>
+                                </details>
                             </div>
                         ))}
                     </div>
                 ) : (
-                     <div className="placeholder">{t('noRecordsFound')}</div>
+                    !isFetching && <div className="placeholder">{t('noRecordsFound')}</div>
                 )}
             </main>
         </div>
-        <AddCaseModal 
-            isOpen={isAddModalOpen}
-            onClose={() => setIsAddModalOpen(false)}
-            onComplete={() => {
-                setIsAddModalOpen(false);
-                loadRecords();
-            }}
-            t={t}
-        />
-        </>
     );
 };
 
@@ -1820,7 +1962,7 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [language, setLanguage] = useState(localStorage.getItem('judgment-analyzer-lang') || 'ar');
   const [theme, setTheme] = useState(localStorage.getItem('judgment-analyzer-theme') || 'light');
-  const [activeTab, setActiveTab] = useState('input');
+  const [activeTab, setActiveTab] = useState('judicialRecords');
   const [dialogConfig, setDialogConfig] = useState<{
     isOpen: boolean;
     title: string;
@@ -2685,7 +2827,46 @@ function App() {
   );
 }
 
-// FIX: Add `allTags` to the function's destructured parameters to resolve a 'Cannot find name' error.
+// FIX: Added PlaceholderView component to resolve 'Cannot find name' error.
+const PlaceholderView = ({ title, t }: { title: string; t: TFunction }) => {
+    const dateLocale = document.documentElement.lang === 'ar' ? arLocale : enLocale;
+
+    return (
+        <div className="admin-card">
+            <div className="admin-card-header">
+                <h3>{title}</h3>
+            </div>
+            <div className="admin-card-body">
+                <p className="placeholder">{t('backendRequiredNotice')}</p>
+                {title === t('userManagementSection') && (
+                    <div className="user-management-placeholder">
+                        <button disabled className="admin-button-primary">{t('inviteUserButton')}</button>
+                        <table className="admin-table disabled-table">
+                            <thead><tr><th>{t('userLabel')}</th><th>{t('roleLabel')}</th><th>{t('lastActiveLabel')}</th><th>{t('statusLabel')}</th><th>{t('actionsLabel')}</th></tr></thead>
+                            <tbody>
+                                <tr>
+                                    <td>user@example.com</td>
+                                    <td>{t('adminLabel')}</td>
+                                    <td>{formatDistanceToNow(new Date(), { addSuffix: true, locale: dateLocale })}</td>
+                                    <td><span className="status-dot operational"></span> {t('activeLabel')}</td>
+                                    <td>...</td>
+                                </tr>
+                                <tr>
+                                    <td>analyst@example.com</td>
+                                    <td>{t('analystLabel')}</td>
+                                    <td>{formatDistanceToNow(subDays(new Date(), 3), { addSuffix: true, locale: dateLocale })}</td>
+                                    <td><span className="status-dot inactive"></span> {t('inactiveLabel')}</td>
+                                    <td>...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
 const AdminDashboard = ({ t, onSwitchView, allCases, allTags, onBulkDelete, onBulkUpdate, schema, onSchemaUpdate }: {
     t: TFunction;
     onSwitchView: () => void;
@@ -2749,25 +2930,21 @@ const AnalyticsView = ({ allCases, allTags, t }: { allCases: CaseRecord[]; allTa
         const analysisErrors = allCases.filter(c => c.error).length;
         const totalUniqueTags = allTags.length;
 
-        // FIX: Use dateFns namespace.
-        const thirtyDaysAgo = dateFns.startOfDay(dateFns.subDays(new Date(), 30));
+        const thirtyDaysAgo = startOfDay(subDays(new Date(), 30));
         const casesByDay = allCases.reduce((acc, curr) => {
             if (curr.timestamp >= thirtyDaysAgo.getTime()) {
-                // FIX: Use dateFns namespace.
-                const day = dateFns.format(new Date(curr.timestamp), 'yyyy-MM-dd');
+                const day = format(new Date(curr.timestamp), 'yyyy-MM-dd');
                 acc[day] = (acc[day] || 0) + 1;
             }
             return acc;
         }, {} as Record<string, number>);
 
-        // FIX: Use dateFns namespace.
-        const dateLabels = [...Array(30)].map((_, i) => dateFns.format(dateFns.subDays(new Date(), i), 'MM-dd')).reverse();
+        const dateLabels = [...Array(30)].map((_, i) => format(subDays(new Date(), i), 'MM-dd')).reverse();
         const dailyCounts = dateLabels.map(label => {
             const date = new Date();
             const [month, day] = label.split('-');
             date.setMonth(parseInt(month) - 1, parseInt(day));
-            // FIX: Use dateFns namespace.
-            const formattedDate = dateFns.format(date, 'yyyy-MM-dd');
+            const formattedDate = format(date, 'yyyy-MM-dd');
             return casesByDay[formattedDate] || 0;
         });
 
@@ -2937,8 +3114,7 @@ const CaseDataManagementView = ({ allCases, t, onBulkDelete, onBulkUpdate }: {
                                             {c.id !== undefined && <input type="checkbox" checked={selectedCases.has(c.id)} onChange={() => handleSelectCase(c.id!)} />}
                                         </td>
                                         <td>{c.analysis?.title || c.analysis?.judgmentNumber || `ID: ${c.id}`}</td>
-                                        {/* FIX: Use dateFns namespace. */}
-                                        <td>{dateFns.format(new Date(c.timestamp), 'yyyy-MM-dd HH:mm')}</td>
+                                        <td>{format(new Date(c.timestamp), 'yyyy-MM-dd HH:mm')}</td>
                                         <td><span className="code-pill">{c.tags?.length || 0}</span></td>
                                         <td>{c.analysis?.hasAppeal ? '✅' : '❌'}</td>
                                         <td>{c.error ? <span className="status-dot error"></span> : <span className="status-dot operational"></span>} {c.error ? t('errorLabel') : t('operationalLabel')}</td>
@@ -2992,8 +3168,7 @@ const AuditLogView = ({ t }: { t: TFunction }) => {
                                 <tr key={log.id}>
                                     <td><span className="code-pill">{log.action}</span></td>
                                     <td>{log.details}</td>
-                                    {/* FIX: Use dateFns namespace. */}
-                                    <td>{dateFns.format(new Date(log.timestamp), 'yyyy-MM-dd HH:mm:ss')}</td>
+                                    <td>{format(new Date(log.timestamp), 'yyyy-MM-dd HH:mm:ss')}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -3072,57 +3247,78 @@ const SchemaSettingsView = ({ schema: initialSchema, onSchemaUpdate, t }: {
         try {
             await onSchemaUpdate(schema.filter(f => f.name.trim() !== ''));
             setSaveStatus({ type: 'success', message: t('schemaSavedSuccess') });
-        } catch (error) {
+        } catch (err) {
+            // FIX: Added the 'message' property to the state update to match the type definition.
             setSaveStatus({ type: 'error', message: t('errorSavingSchema') });
         } finally {
             setIsSaving(false);
-            setTimeout(() => setSaveStatus(null), 3000);
         }
     };
-
+    // FIX: Added a return statement to render the component's JSX.
     return (
         <div className="admin-card">
-            <div className="admin-card-header"><h3>{t('schemaSettingsSection')}</h3></div>
+            <div className="admin-card-header">
+                <h3>{t('schemaSettingsSection')}</h3>
+            </div>
             <div className="admin-card-body">
-                <p className="settings-description">{t('schemaDescription')}</p>
-                <div className="schema-builder-table-container">
-                    <table className="admin-table schema-builder-table">
-                        <thead>
-                            <tr>
-                                <th>{t('fieldNameLabel')}</th>
-                                <th>{t('fieldTypeLabel')}</th>
-                                <th>{t('descriptionLabel')}</th>
-                                <th>{t('primaryKeyLabel')}</th>
-                                <th>{t('nullableLabel')}</th>
-                                <th>{t('actionsLabel')}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {schema.map((field, index) => (
-                                <tr key={index}>
-                                    <td><input type="text" value={field.name} onChange={e => handleFieldChange(index, 'name', e.target.value)} /></td>
-                                    <td>
-                                        <select value={field.type} onChange={e => handleFieldChange(index, 'type', e.target.value)}>
-                                            {/* FIX: Cast `Object.values(Type)` to `string[]` to ensure TypeScript correctly infers `type` as a string, resolving assignment errors for the key, value, and children of the option element. */}
-                                            {(Object.values(Type) as string[]).filter(t => t !== Type.TYPE_UNSPECIFIED && t !== Type.NULL).map(type => (
-                                                <option key={type} value={type}>{type}</option>
-                                            ))}
-                                        </select>
-                                    </td>
-                                    <td><input type="text" value={field.description} onChange={e => handleFieldChange(index, 'description', e.target.value)} /></td>
-                                    <td><input type="checkbox" checked={field.isPrimaryKey} onChange={e => handleFieldChange(index, 'isPrimaryKey', e.target.checked)} /></td>
-                                    <td><input type="checkbox" checked={field.nullable} onChange={e => handleFieldChange(index, 'nullable', e.target.checked)} /></td>
-                                    <td><button className="delete-btn" onClick={() => removeField(index)}>&times;</button></td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                <p className="schema-description">{t('schemaDescription')}</p>
+                <div className="schema-editor-container">
+                    <div className="schema-editor-header">
+                        <div className="schema-header-item field-name">{t('fieldNameLabel')}</div>
+                        <div className="schema-header-item field-type">{t('fieldTypeLabel')}</div>
+                        <div className="schema-header-item field-description">{t('descriptionLabel')}</div>
+                        <div className="schema-header-item field-pk">{t('primaryKeyLabel')}</div>
+                        <div className="schema-header-item field-nullable">{t('nullableLabel')}</div>
+                        <div className="schema-header-item field-actions"></div>
+                    </div>
+                    {schema.map((field, index) => (
+                        <div key={index} className="schema-editor-row">
+                            <input
+                                type="text"
+                                value={field.name}
+                                onChange={(e) => handleFieldChange(index, 'name', e.target.value)}
+                                placeholder={t('fieldNameLabel')}
+                                className="field-name"
+                            />
+                            <select
+                                value={field.type}
+                                onChange={(e) => handleFieldChange(index, 'type', e.target.value as Type)}
+                                className="field-type"
+                            >
+                                {Object.values(Type).filter(v => v !== Type.TYPE_UNSPECIFIED).map(typeValue => (
+                                    <option key={typeValue} value={typeValue}>{typeValue}</option>
+                                ))}
+                            </select>
+                            <input
+                                type="text"
+                                value={field.description}
+                                onChange={(e) => handleFieldChange(index, 'description', e.target.value)}
+                                placeholder={t('descriptionLabel')}
+                                className="field-description"
+                            />
+                            <input
+                                type="checkbox"
+                                checked={field.isPrimaryKey}
+                                onChange={(e) => handleFieldChange(index, 'isPrimaryKey', e.target.checked)}
+                                className="field-pk"
+                                title={t('primaryKeyLabel')}
+                            />
+                            <input
+                                type="checkbox"
+                                checked={field.nullable}
+                                onChange={(e) => handleFieldChange(index, 'nullable', e.target.checked)}
+                                className="field-nullable"
+                                title={t('nullableLabel')}
+                            />
+                            <button onClick={() => removeField(index)} className="admin-button-icon" title={t('deleteButtonLabel')}>&times;</button>
+                        </div>
+                    ))}
                 </div>
-                <div className="schema-builder-controls">
-                    <button className="admin-button-secondary" onClick={addField}>{t('addFieldButton')}</button>
-                    <div className="save-action">
-                        {saveStatus && <span className={`save-message ${saveStatus.type}`}>{saveStatus.message}</span>}
-                        <button className="admin-button" onClick={handleSave} disabled={isSaving}>
+                <div className="schema-editor-controls">
+                    <button onClick={addField} className="admin-button-secondary">{t('addFieldButton')}</button>
+                    <div className="save-controls">
+                        {saveStatus && <span className={`save-status ${saveStatus.type}`}>{saveStatus.message}</span>}
+                        <button onClick={handleSave} disabled={isSaving} className="admin-button-primary">
                             {isSaving ? t('savingSchemaButton') : t('saveSchemaButton')}
                         </button>
                     </div>
@@ -3130,32 +3326,12 @@ const SchemaSettingsView = ({ schema: initialSchema, onSchemaUpdate, t }: {
             </div>
         </div>
     );
-}
-
-
-const PlaceholderView = ({ title, t }: { title: string, t: TFunction }) => {
-    return (
-        <div className="admin-card">
-            <div className="admin-card-header"><h3>{title}</h3></div>
-            <div className="admin-card-body">
-                <div className="placeholder-content with-overlay">
-                    <div className="placeholder-overlay"><span>{t('backendRequiredNotice')}</span></div>
-                    {/* Dummy content */}
-                    <h3>{t('inviteUserButton')}</h3>
-                    <div className="admin-table-container">
-                        <table className="admin-table">
-                            <thead><tr><th>{t('userLabel')}</th><th>{t('roleLabel')}</th><th>{t('lastActiveLabel')}</th><th>{t('statusLabel')}</th><th>{t('actionsLabel')}</th></tr></thead>
-                            {/* FIX: Use dateFns namespace. */}
-                            <tbody><tr><td>admin@example.com</td><td>{t('adminLabel')}</td><td>{dateFns.formatDistanceToNow(new Date())}</td><td><span className="status-dot active"></span> {t('activeLabel')}</td><td>...</td></tr></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
 };
 
-const root = ReactDOM.createRoot(document.getElementById('root')!);
+
+const root = ReactDOM.createRoot(
+  document.getElementById('root') as HTMLElement
+);
 root.render(
   <React.StrictMode>
     <App />
