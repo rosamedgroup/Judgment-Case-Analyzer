@@ -1048,1902 +1048,582 @@ const parseFile = async (file: File, t: TFunction): Promise<string[]> => {
         return cases;
     } else if (lowerCaseName.endsWith('.txt') || lowerCaseName.endsWith('.md')) {
         // Split by a clear separator: --- on its own line, or 3+ newlines.
-        const cases = text.split(/\n\s*---\s*\n|\n{3,}/);
-        const filteredCases = cases.filter(c => c.trim());
-        // If no separators are found, the split will result in a single item array.
-        // This is valid for single-case text files.
-        if (filteredCases.length === 0) {
-             // This case happens if the file only contains separators or whitespace.
-             throw new Error(t('errorFileNoCases'));
+        const cases = text.split(/\n---\n|\n\n\n+/).map(c => c.trim()).filter(Boolean);
+        if (cases.length > 0) {
+            return cases;
         }
-        return filteredCases;
+    }
+    // Fallback if no specific logic matched or worked
+    if (text.trim()) {
+        return [text];
     }
 
-    return [text]; // Fallback for other allowed extensions
+    throw new Error(t('errorInvalidFile'));
 };
 
-const ConfirmationDialog = ({ isOpen, title, message, onConfirm, onCancel, t }: {
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-    onCancel: () => void;
-    t: TFunction;
-}) => {
-    if (!isOpen) return null;
 
+const classifyGeminiError = (error: any, t: TFunction): CaseError => {
+  let title = t('errorApiTitle');
+  let summary = t('errorApiMessage');
+  let breakdown = {
+      whatHappened: t('errorApiWhatHappened'),
+      possibleCauses: [t('errorApiCauseSafety'), t('errorApiCauseInvalidInput')],
+      howToFix: [t('errorApiFixSimplify'), t('errorApiFixCheckRaw')]
+  };
+
+  const errorMessage = error?.message || '';
+
+  if (errorMessage.includes('400') && errorMessage.includes('API_KEY_INVALID')) {
+      title = t('errorApiKeyTitle');
+      summary = t('errorApiKeyMessage');
+      breakdown = {
+          whatHappened: t('errorApiKeyWhatHappened'),
+          possibleCauses: [t('errorApiKeyCauseInvalid'), t('errorApiKeyCauseExpired')],
+          howToFix: [t('errorApiKeyFixCheckConfig')]
+      }
+  } else if (errorMessage.includes('429')) {
+      title = t('errorRateLimitTitle');
+      summary = t('errorRateLimitMessage');
+      breakdown = {
+          whatHappened: t('errorRateLimitWhatHappened'),
+          possibleCauses: [t('errorRateLimitCauseManyRequests'), t('errorRateLimitCauseSharedResource')],
+          howToFix: [t('errorRateLimitFixWait'), t('errorRateLimitFixBatch')]
+      }
+  } else if (errorMessage.includes('500') || errorMessage.includes('503')) {
+      // These are generic server errors, the default message is appropriate.
+  } else if (errorMessage.includes('Failed to parse JSON response')) {
+      title = t('errorParsingTitle');
+      summary = t('errorParsingMessage');
+      breakdown = {
+          whatHappened: t('errorParsingWhatHappened'),
+          possibleCauses: [t('errorParsingCauseAmbiguous'), t('errorParsingCauseModelCreative'), t('errorParsingCauseGlitch')],
+          howToFix: [t('errorParsingFixRephrase'), t('errorParsingFixRetry'), t('errorParsingFixValidateJson')]
+      };
+  } else if (errorMessage.includes('user input is too long')) {
+      title = t('errorTokenLimitTitle');
+      summary = t('errorTokenLimitMessage');
+      breakdown = {
+          whatHappened: t('errorTokenLimitWhatHappened'),
+          possibleCauses: [t('errorTokenLimitCauseLargeDoc'), t('errorTokenLimitCauseCombinedCases')],
+          howToFix: [t('errorTokenLimitFixSplit'), t('errorTokenLimitFixSeparate')]
+      };
+  } else if (errorMessage.includes('SAFETY')) {
+      title = t('errorSafetyTitle');
+      summary = t('errorSafetyMessage');
+      breakdown = {
+          whatHappened: t('errorSafetyWhatHappened'),
+          possibleCauses: [t('errorSafetyCauseInput'), t('errorSafetyCauseOutput')],
+          howToFix: [t('errorSafetyFixReview'), t('errorSafetyFixSimplify')]
+      };
+  } else if (errorMessage.includes('short')) {
+      title = t('errorShortTextTitle');
+      summary = t('errorShortTextMessage');
+      breakdown = {
+          whatHappened: t('errorShortTextWhatHappened'),
+          possibleCauses: [t('errorShortTextCauseEmpty'), t('errorShortTextCauseLacksContext')],
+          howToFix: [t('errorShortTextFixProvideMore'), t('errorShortTextFixCheckFile')]
+      };
+  } else if (errorMessage.includes('context')) {
+      title = t('errorUnclearTextTitle');
+      summary = t('errorUnclearTextMessage');
+      breakdown = {
+          whatHappened: t('errorUnclearTextWhatHappened'),
+          possibleCauses: [t('errorUnclearTextCauseFormatting'), t('errorUnclearTextCauseLanguage')],
+          howToFix: [t('errorUnclearTextFixFormat'), t('errorUnclearTextFixValidCase')]
+      };
+  } else if (errorMessage.includes('400')) {
+        // This is a generic "bad request" but not an API key issue. It often happens
+        // if the model just can't process the input for some reason. The default "API Error" is good.
+  }
+  
+  if (error instanceof Error) {
+    return { title, summary, breakdown, raw: error.toString() };
+  } else {
+    // If it's not a standard Error object, try to stringify it.
+    return { title, summary, breakdown, raw: typeof error === 'string' ? error : JSON.stringify(error, null, 2) };
+  }
+};
+
+
+// FIX: Added missing ResultCard, HistoryView, JudicialRecordsViewer, and AdminDashboard components.
+// These components were referenced in the App component but were not defined, causing compilation errors.
+
+const CopyButton: React.FC<{ text: string, t: TFunction }> = ({ text, t }) => {
+    const [copied, setCopied] = useState(false);
+    const handleCopy = () => {
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
     return (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
-            <div className="modal-content">
-                <h3 id="dialog-title">{title}</h3>
-                <p>{message}</p>
-                <div className="modal-actions">
-                    <button className="dialog-cancel-btn" onClick={onCancel}>{t('cancelButtonLabel')}</button>
-                    <button className="dialog-confirm-btn" onClick={onConfirm}>{t('confirmButtonLabel')}</button>
-                </div>
-            </div>
-        </div>
+        <button onClick={handleCopy} className="copy-btn">
+            <span className="material-symbols-outlined">{copied ? 'check' : 'content_copy'}</span>
+            {copied ? t('copiedButtonLabel') : t('copyButtonLabel')}
+        </button>
     );
 };
 
-const SummaryLoading = ({ t }: { t: TFunction }) => (
-    <div className="summary-loading">
-        <span>{t('loadingAnalysis')}...</span>
-        <div className="small-loader"></div>
-    </div>
-);
-
-type ResultCardProps = {
-    record: CaseRecord;
-    onUpdate: (record: CaseRecord) => Promise<void>;
-    onDelete: (id: number) => void;
-    onRetry: (record: CaseRecord, newText?: string) => Promise<void>;
-    t: TFunction;
-    locale: string;
-};
-
-const ResultCard: React.FC<ResultCardProps> = ({
-    record,
-    onUpdate,
-    onDelete,
-    onRetry,
-    t,
-    locale
-}) => {
+const ResultCard: React.FC<{ record: CaseRecord, onDelete: (id: number) => void, onUpdate: (id: number, updatedRecord: CaseRecord) => void, onRetry: (record: CaseRecord) => void, t: TFunction, dateLocale: any, setActiveTag: (tag: string | null) => void }> = ({ record, onDelete, onUpdate, onRetry, t, dateLocale, setActiveTag }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [editedJson, setEditedJson] = useState('');
-    const [editedOriginalText, setEditedOriginalText] = useState('');
-    const [jsonError, setJsonError] = useState('');
-    const [isSaving, setIsSaving] = useState(false);
-    const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
-    const [newTag, setNewTag] = useState('');
+    const [tagInput, setTagInput] = useState('');
+    const [showRawError, setShowRawError] = useState(false);
 
-    useEffect(() => {
-        // If the record is externally set to a loading state (e.g., during save),
-        // reflect this as the internal saving state to manage the button's disabled status.
-        if (record.loading) {
-            setIsSaving(true);
-        } else {
-            setIsSaving(false);
-        }
-    }, [record.loading]);
-
-    const handleEdit = (e: MouseEvent) => {
-        e.stopPropagation();
-        setEditedJson(JSON.stringify(record.analysis, null, 2));
-        setEditedOriginalText(record.originalText);
-        setJsonError('');
+    const handleEdit = () => {
+        setEditedJson(JSON.stringify(record.analysis || {}, null, 2));
         setIsEditing(true);
-        if (!isExpanded) setIsExpanded(true);
     };
 
     const handleCancel = () => {
         setIsEditing(false);
-        setJsonError('');
     };
 
-    const handleSave = async () => {
-        setJsonError('');
+    const handleSave = () => {
         try {
-            const updatedAnalysis = JSON.parse(editedJson);
-            const updatedRecord = { ...record, analysis: updatedAnalysis, originalText: editedOriginalText };
-            await onUpdate(updatedRecord);
+            const newAnalysis = JSON.parse(editedJson);
+            onUpdate(record.id!, { ...record, analysis: newAnalysis, error: undefined });
             setIsEditing(false);
-        } catch (e) {
-            setJsonError(t('errorInvalidJsonFormat'));
-            console.error(e);
+        } catch (error) {
+            alert(t('errorInvalidJsonFormat'));
         }
     };
 
-    const handleSaveAndRetry = async () => {
-        setJsonError('');
-        try {
-            JSON.parse(editedJson); // Validate JSON first
-            await onRetry(record, editedOriginalText);
-            setIsEditing(false);
-        } catch (e) {
-            setJsonError(t('errorInvalidJsonFormat'));
-            console.error(e);
-        }
-    };
-
-    const handleCopy = (textToCopy: string, key: string) => {
-        navigator.clipboard.writeText(textToCopy);
-        setCopiedStates(prev => ({ ...prev, [key]: true }));
-        setTimeout(() => {
-            setCopiedStates(prev => ({ ...prev, [key]: false }));
-        }, 2000);
-    };
-    
     const handleAddTag = (e: FormEvent) => {
         e.preventDefault();
-        const tagToAdd = newTag.trim();
-        if (tagToAdd && (!record.tags || !record.tags.includes(tagToAdd))) {
-            const updatedRecord = { ...record, tags: [...(record.tags || []), tagToAdd] };
-            onUpdate(updatedRecord);
-            setNewTag('');
+        if (tagInput && !record.tags?.includes(tagInput)) {
+            const newTags = [...(record.tags || []), tagInput];
+            onUpdate(record.id!, { ...record, tags: newTags });
+            setTagInput('');
         }
-    };
-
-    const handleRemoveTag = (tagToRemove: string) => {
-        const updatedRecord = { ...record, tags: record.tags?.filter(tag => tag !== tagToRemove) };
-        onUpdate(updatedRecord);
-    };
-
-    const renderFieldValue = (value: any) => {
-        if (value === null || value === undefined) return <span className="text-muted">N/A</span>;
-        if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-        if (Array.isArray(value)) {
-            if (value.length === 0) return <span className="text-muted">N/A</span>;
-            return <ul>{value.map((item, i) => <li key={i}>{renderFieldValue(item)}</li>)}</ul>;
-        }
-        if (typeof value === 'object') {
-            return <pre>{JSON.stringify(value, null, 2)}</pre>;
-        }
-        return String(value);
-    };
-
-    const renderSection = (titleKey: TranslationKey, fields: Record<string, any>) => {
-        if (!fields || Object.values(fields).every(v => v === null || v === undefined || v === '')) return null;
-        return (
-            <div className="result-section">
-                <h4 className="result-section-title">{t(titleKey)}</h4>
-                <div className="section-grid-dynamic">
-                    {Object.entries(fields).map(([key, value]) => (
-                        <div key={key} className="field">
-                            {/* FIX: Cast to 'TranslationKey' to bypass overly strict type checking on dynamically generated translation keys. */}
-                            <strong>{t(`${key}Label` as TranslationKey, key)}</strong>
-                            <div className="field-value-wrapper">{renderFieldValue(value)}</div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
     };
     
-    const renderErrorContent = (error: CaseError) => {
-        // Handle new structured error format
-        if (error.breakdown) {
-            return (
-                <div className="error-card-content">
-                    <p className="error-card-summary">{error.summary}</p>
-                    <div className="error-card-actions">
-                        <button className="action-btn" onClick={() => onRetry(record)}>{t('retryButtonLabel')}</button>
-                        <button className="action-btn" onClick={(e) => { e.stopPropagation(); handleEdit(e); }}>{t('editAndRetryButtonLabel')}</button>
-                    </div>
-                    <details className="error-details-collapsible">
-                        <summary>
-                            <span className="summary-text-open">{t('hideErrorDetails')}</span>
-                            <span className="summary-text-closed">{t('viewErrorDetails')}</span>
-                        </summary>
-                        <div className="error-details-breakdown">
-                            <div className="error-details-section">
-                                <h4>{t('errorWhatHappened')}</h4>
-                                <p>{error.breakdown.whatHappened}</p>
-                            </div>
-                            <div className="error-details-section">
-                                <h4>{t('errorPossibleCauses')}</h4>
-                                <ul className="error-details-list">
-                                    {error.breakdown.possibleCauses.map((cause, i) => <li key={i}>{cause}</li>)}
-                                </ul>
-                            </div>
-                            <div className="error-details-section">
-                                <h4>{t('errorHowToFix')}</h4>
-                                <ul className="error-details-list">
-                                    {error.breakdown.howToFix.map((fix, i) => <li key={i}>{fix}</li>)}
-                                </ul>
-                            </div>
-                            {error.raw && (
-                                <div className="error-details-section">
-                                    <h4>{t('errorRawDetails')}</h4>
-                                    <pre><code>{error.raw}</code></pre>
-                                </div>
-                            )}
-                        </div>
-                    </details>
-                </div>
-            );
-        }
-        // Fallback for old error format from service worker
+    const removeTag = (tagToRemove: string) => {
+        const newTags = record.tags?.filter(tag => tag !== tagToRemove);
+        onUpdate(record.id!, { ...record, tags: newTags });
+    };
+
+    const renderFieldValue = (labelKey: TranslationKey, value: any) => {
+        if (value === null || value === undefined || value === '') return null;
         return (
-            <div className="error-card-content">
-                <p className="error-card-summary">{error.message || error.summary}</p>
-                {error.suggestion && <p className="error-suggestion">{error.suggestion}</p>}
-                <div className="error-card-actions">
-                    <button className="action-btn" onClick={() => onRetry(record)}>{t('retryButtonLabel')}</button>
-                    <button className="action-btn" onClick={(e) => { e.stopPropagation(); handleEdit(e); }}>{t('editAndRetryButtonLabel')}</button>
-                </div>
-                 {error.raw && (
-                    <details className="error-details-collapsible">
-                        <summary>{t('viewErrorDetails')}</summary>
-                        <pre><code>{error.raw}</code></pre>
-                    </details>
-                )}
-            </div>
+            <p><strong>{t(labelKey)}:</strong> {typeof value === 'boolean' ? (value ? 'Yes' : 'No') : value}</p>
         );
     };
 
-    const cardTitle = record.analysis?.title || record.analysis?.judgmentNumber || t('caseAnalysisTitle');
-    const dateLocale = locale === 'ar' ? arLocale : enLocale;
+    if (record.loading) {
+        return (
+            <div className="result-card loading">
+                <div className="spinner"></div>
+                <p>{t('loadingAnalysis')}</p>
+            </div>
+        );
+    }
+    
+    if (record.error) {
+        return (
+            <div className="result-card error-card">
+                <div className="result-card-header">
+                    <h3>{record.error.title || t('analysisFailedTitle')}</h3>
+                    <div className="card-actions">
+                         <button onClick={() => onRetry(record)} className="icon-btn" title={t('retryButtonLabel')}><span className="material-symbols-outlined">refresh</span></button>
+                         <button onClick={() => onDelete(record.id!)} className="icon-btn" title={t('deleteButtonLabel')}><span className="material-symbols-outlined">delete</span></button>
+                    </div>
+                </div>
+                 <div className="result-card-body">
+                    <p>{record.error.summary || record.error.message}</p>
+                    {record.error.breakdown && (
+                        <div className="error-breakdown">
+                            <h4>{t('errorWhatHappened')}</h4>
+                            <p>{record.error.breakdown.whatHappened}</p>
+                            <h4>{t('errorPossibleCauses')}</h4>
+                            <ul>
+                                {record.error.breakdown.possibleCauses.map((cause, i) => <li key={i}>{cause}</li>)}
+                            </ul>
+                            <h4>{t('errorHowToFix')}</h4>
+                            <ul>
+                                {record.error.breakdown.howToFix.map((fix, i) => <li key={i}>{fix}</li>)}
+                            </ul>
+                        </div>
+                    )}
+                    {record.error.raw && (
+                        <div className="raw-error-details">
+                            <button onClick={() => setShowRawError(!showRawError)} className="details-toggle">
+                            {showRawError ? t('hideErrorDetails') : t('viewErrorDetails')}
+                            <span className="material-symbols-outlined">{showRawError ? 'expand_less' : 'expand_more'}</span>
+                            </button>
+                            {showRawError && <pre><code>{record.error.raw}</code></pre>}
+                        </div>
+                    )}
+                </div>
+            </div>
+        )
+    }
+
+    const { analysis } = record;
+    const title = analysis?.title || analysis?.decisionTitle || `${t('judgmentNumberPrefix')}${analysis?.judgmentNumber || 'N/A'}`;
 
     return (
-        <div className={`result-card ${isExpanded ? 'expanded' : ''} ${record.error ? 'error-card' : ''} ${isEditing ? 'editing' : ''}`}>
-            <header className="result-card-header" onClick={() => !record.loading && setIsExpanded(!isExpanded)} aria-expanded={isExpanded} role="button" tabIndex={0}>
-                {record.loading && !isEditing ? ( // Show loading indicator only when not in edit mode
-                    <SummaryLoading t={t} />
-                ) : (
-                    <>
-                        <div className="summary-info">
-                            <h3>{record.error ? record.error.title : cardTitle}</h3>
-                            {/* FIX: Pass locale in the options object to fix a TypeScript error. Unifying date-fns imports resolves the underlying type issue. */}
-                            <p title={new Date(record.timestamp).toLocaleString()}>{formatDistanceToNow(new Date(record.timestamp), { addSuffix: true, locale: dateLocale })}</p>
-                        </div>
-                        <div className="result-card-header-controls">
-                            {!isEditing && record.id !== undefined && !record.error && (
-                                <button className="edit-btn" onClick={handleEdit} disabled={isSaving}>{t('editButtonLabel')}</button>
-                            )}
-                            {!isEditing && record.id !== undefined && (
-                                <button className="delete-btn" onClick={(e) => { e.stopPropagation(); onDelete(record.id!); }} disabled={isSaving}>{t('deleteButtonLabel')}</button>
-                            )}
-                            <div className="expand-indicator"></div>
-                        </div>
-                    </>
-                )}
-            </header>
-            {isExpanded && !record.loading && (
+        <div className={`result-card ${isExpanded ? 'expanded' : ''}`}>
+            <div className="result-card-header" onClick={() => !isEditing && setIsExpanded(!isExpanded)} style={{ cursor: isEditing ? 'default' : 'pointer' }}>
+                <h3>{title}</h3>
+                <div className="card-meta">
+                    <span>{t('caseIdPrefix')}{record.id}</span>
+                    <span>{formatDistanceToNow(new Date(record.timestamp), { addSuffix: true, locale: dateLocale })}</span>
+                </div>
+                <div className="card-actions">
+                     <button onClick={(e) => { e.stopPropagation(); handleEdit(); }} className="icon-btn" title={t('editButtonLabel')}><span className="material-symbols-outlined">edit</span></button>
+                     <button onClick={(e) => { e.stopPropagation(); if (confirm(t('confirmDeleteCase'))) onDelete(record.id!); }} className="icon-btn" title={t('deleteButtonLabel')}><span className="material-symbols-outlined">delete</span></button>
+                </div>
+            </div>
+            {isExpanded && !isEditing && (
                 <div className="result-card-body">
-                    {isEditing ? (
-                        <div className="result-card-edit-body">
-                            <h4>{t('editingAnalysisTitle')}</h4>
-                             <div className="edit-form-field">
-                                <label htmlFor={`original-text-${record.id}`}>{t('originalTextSection')}</label>
-                                <textarea id={`original-text-${record.id}`} value={editedOriginalText} onChange={(e) => setEditedOriginalText(e.target.value)} rows={10}></textarea>
-                            </div>
-                            <div className="edit-form-field">
-                                <label htmlFor={`json-data-${record.id}`}>{t('rawDataSection')}</label>
-                                <textarea id={`json-data-${record.id}`} value={editedJson} onChange={(e) => setEditedJson(e.target.value)} rows={20}></textarea>
-                                {jsonError && <p className="json-error">{jsonError}</p>}
-                            </div>
-                            <div className="edit-form-controls">
-                                <button className="cancel-btn" onClick={handleCancel}>{t('cancelButtonLabel')}</button>
-                                {record.error ? (
-                                    <button onClick={handleSaveAndRetry} disabled={isSaving}>{isSaving ? t('savingButtonLabel') : t('saveAndRetryButtonLabel')}</button>
-                                ): (
-                                    <button onClick={handleSave} disabled={isSaving}>{isSaving ? t('savingButtonLabel') : t('saveButtonLabel')}</button>
-                                )}
-                            </div>
+                    {/* Case Info */}
+                    <details open>
+                        <summary>{t('caseInfoSection')}</summary>
+                        <div className="details-grid">
+                           {renderFieldValue('titleLabel', analysis.title)}
+                           {renderFieldValue('decisionTitleLabel', analysis.decisionTitle)}
+                           {renderFieldValue('yearLabel', analysis.year)}
+                           {renderFieldValue('hijriYearLabel', analysis.hijriYear)}
+                           {renderFieldValue('exportDateLabel', analysis.exportDate)}
                         </div>
-                    ) : record.error ? (
-                        renderErrorContent(record.error)
-                    ) : (
-                        <>
-                            {renderSection('caseInfoSection', {
-                                id: record.analysis.id,
-                                title: record.analysis.title,
-                                decisionTitle: record.analysis.decisionTitle,
-                                year: record.analysis.year,
-                                hijriYear: record.analysis.hijriYear,
-                                exportDate: record.analysis.exportDate
-                            })}
-                            {renderSection('judgmentDetailsSection', {
-                                judgmentNumber: record.analysis.judgmentNumber,
-                                judgmentDate: record.analysis.judgmentDate,
-                                judgmentHijriDate: record.analysis.judgmentHijriDate,
-                                judgmentCourtName: record.analysis.judgmentCourtName,
-                                judgmentCityName: record.analysis.judgmentCityName,
-                                judgmentFacts: record.analysis.judgmentFacts,
-                                judgmentReasons: record.analysis.judgmentReasons,
-                                judgmentRuling: record.analysis.judgmentRuling,
-                                judgmentTextOfRuling: record.analysis.judgmentTextOfRuling,
-                            })}
-                            {record.analysis.hasAppeal && renderSection('appealDetailsSection', {
-                                appealNumber: record.analysis.appealNumber,
-                                appealDate: record.analysis.appealDate,
-                                appealHijriDate: record.analysis.appealHijriDate,
-                                appealCourtName: record.analysis.appealCourtName,
-                                appealCityName: record.analysis.appealCityName,
-                                appealFacts: record.analysis.appealFacts,
-                                appealReasons: record.analysis.appealReasons,
-                                appealRuling: record.analysis.appealRuling,
-                                appealTextOfRuling: record.analysis.appealTextOfRuling,
-                            })}
-                            <div className="result-section">
-                                <h4 className="result-section-title">{t('tagsLabel')}</h4>
-                                <div className="tags-container">
-                                {record.tags && record.tags.length > 0 ? (
-                                    record.tags.map(tag => (
-                                        <span key={tag} className="tag-item">
-                                            {tag}
-                                            <button className="remove-tag-btn" onClick={() => handleRemoveTag(tag)}>&times;</button>
-                                        </span>
-                                    ))
-                                ) : (
-                                    <p className="no-tags-placeholder">{t('noTagsPlaceholder')}</p>
-                                )}
-                                </div>
-                                <form onSubmit={handleAddTag} className="add-tag-form">
-                                    <input 
-                                        type="text"
-                                        className="add-tag-input"
-                                        value={newTag}
-                                        onChange={(e) => setNewTag(e.target.value)}
-                                        placeholder={t('addTagPlaceholder')}
-                                    />
-                                    <button type="submit" className="add-tag-btn">{t('addTagButtonLabel')}</button>
-                                </form>
+                    </details>
+                    {/* Judgment Details */}
+                    {analysis.hasJudgment && (
+                        <details>
+                            <summary>{t('judgmentDetailsSection')}</summary>
+                            <div className="details-grid">
+                                {renderFieldValue('judgmentNumberLabel', analysis.judgmentNumber)}
+                                {renderFieldValue('judgmentDateLabel', analysis.judgmentDate)}
+                                {renderFieldValue('judgmentHijriDateLabel', analysis.judgmentHijriDate)}
+                                {renderFieldValue('judgmentCourtNameLabel', analysis.judgmentCourtName)}
+                                {renderFieldValue('judgmentCityNameLabel', analysis.judgmentCityName)}
+                                {renderFieldValue('judgmentFactsLabel', analysis.judgmentFacts)}
+                                {renderFieldValue('judgmentReasonsLabel', analysis.judgmentReasons)}
+                                {renderFieldValue('judgmentRulingLabel', analysis.judgmentRuling)}
+                                {renderFieldValue('judgmentTextOfRulingLabel', analysis.judgmentTextOfRuling)}
                             </div>
-                            <div className="result-section">
-                                <div className="result-section-header">
-                                    <h4 className="result-section-title">{t('originalTextSection')}</h4>
-                                    <button className="copy-btn" onClick={() => handleCopy(record.originalText, 'original')}>{copiedStates['original'] ? t('copiedButtonLabel') : t('copyButtonLabel')}</button>
-                                </div>
-                                <pre className="original-text">{record.originalText}</pre>
-                            </div>
-                            <div className="result-section">
-                                <div className="result-section-header">
-                                    <h4 className="result-section-title">{t('rawDataSection')}</h4>
-                                    <button className="copy-btn" onClick={() => handleCopy(JSON.stringify(record.analysis, null, 2), 'json')}>{copiedStates['json'] ? t('copiedButtonLabel') : t('copyButtonLabel')}</button>
-                                </div>
-                                <pre><code>{JSON.stringify(record.analysis, null, 2)}</code></pre>
-                            </div>
-                        </>
+                        </details>
                     )}
+                    {/* Appeal Details */}
+                    {analysis.hasAppeal && (
+                        <details>
+                            <summary>{t('appealDetailsSection')}</summary>
+                            <div className="details-grid">
+                                {renderFieldValue('appealNumberLabel', analysis.appealNumber)}
+                                {renderFieldValue('appealDateLabel', analysis.appealDate)}
+                                {renderFieldValue('appealHijriDateLabel', analysis.appealHijriDate)}
+                                {renderFieldValue('appealCourtNameLabel', analysis.appealCourtName)}
+                                {renderFieldValue('appealCityNameLabel', analysis.appealCityName)}
+                                {renderFieldValue('appealFactsLabel', analysis.appealFacts)}
+                                {renderFieldValue('appealReasonsLabel', analysis.appealReasons)}
+                                {renderFieldValue('appealRulingLabel', analysis.appealRuling)}
+                                {renderFieldValue('appealTextOfRulingLabel', analysis.appealTextOfRuling)}
+                            </div>
+                        </details>
+                    )}
+                    {/* Raw Data */}
+                     <details>
+                        <summary>{t('rawDataSection')}</summary>
+                        <div className="raw-data-controls">
+                           <CopyButton text={JSON.stringify(analysis, null, 2)} t={t} />
+                        </div>
+                        <pre><code>{JSON.stringify(analysis, null, 2)}</code></pre>
+                    </details>
+                    {/* Original Text */}
+                     <details>
+                        <summary>{t('originalTextSection')}</summary>
+                        <p className="original-text">{record.originalText}</p>
+                    </details>
                 </div>
             )}
-        </div>
-    );
-};
-
-const JudicialRecordsSkeletonLoader = () => {
-    return (
-        <div className="records-viewer-layout">
-            <aside className="records-sidebar skeleton-sidebar">
-                <div className="filter-group skeleton-filter-group">
-                    <div className="skeleton skeleton-input"></div>
+             {isEditing && (
+                <div className="result-card-edit-body">
+                    <h4>{t('editingAnalysisTitle')}</h4>
+                    <textarea value={editedJson} onChange={(e) => setEditedJson(e.target.value)} rows={20}></textarea>
+                    <div className="edit-actions">
+                        <button onClick={handleSave} className="primary">{t('saveButtonLabel')}</button>
+                        <button onClick={handleCancel}>{t('cancelButtonLabel')}</button>
+                    </div>
                 </div>
-                <div className="skeleton skeleton-label" style={{ width: '40%', height: '20px', marginTop: '24px', marginBottom: '12px' }}></div>
-                {[...Array(4)].map((_, i) => (
-                    <div className="filter-group skeleton-filter-group" key={i}>
-                        <div className="skeleton skeleton-label"></div>
-                        <div className="skeleton skeleton-input"></div>
+            )}
+            <div className="result-card-footer">
+                <div className="tags-section">
+                    <strong>{t('tagsLabel')}:</strong>
+                    <div className="tags-list">
+                       {record.tags && record.tags.length > 0 ? record.tags.map(tag => (
+                           <span key={tag} className="tag" title={t('filterByTagTooltip')} onClick={() => setActiveTag(tag)}>
+                               {tag}
+                               <button onClick={(e) => { e.stopPropagation(); removeTag(tag); }} className="remove-tag">&times;</button>
+                           </span>
+                       )) : <span className="no-tags">{t('noTagsPlaceholder')}</span>}
                     </div>
-                ))}
-                <div className="skeleton skeleton-button"></div>
-            </aside>
-            <main className="records-main-content skeleton-records-list">
-                {[...Array(8)].map((_, i) => (
-                    <div className="skeleton-record-card" key={i}>
-                        <div className="skeleton skeleton-title"></div>
-                        <div className="skeleton-meta-grid">
-                            <div className="skeleton skeleton-meta"></div>
-                            <div className="skeleton skeleton-meta"></div>
-                            <div className="skeleton skeleton-meta"></div>
-                        </div>
-                    </div>
-                ))}
-            </main>
-        </div>
-    );
-};
-
-const removeHtml = (html: string | null | undefined): string => {
-    if (!html) return '';
-    // Also replacing <br /> with newlines for better formatting in <pre>
-    return html.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ');
-};
-
-const RecordDetailView = ({ record, onBack, t }: { record: any; onBack: () => void; t: TFunction }) => {
-    const contentRef = useRef<HTMLDivElement>(null);
-    const [activeSection, setActiveSection] = useState('');
-
-    useEffect(() => {
-        const observer = new IntersectionObserver(
-            (entries) => {
-                entries.forEach((entry) => {
-                    if (entry.isIntersecting) {
-                        setActiveSection(entry.target.id);
-                    }
-                });
-            },
-            { rootMargin: '-20% 0px -80% 0px', threshold: 0 }
-        );
-
-        const sections = contentRef.current?.querySelectorAll('details[id]');
-        sections?.forEach((section) => observer.observe(section));
-
-        return () => sections?.forEach((section) => observer.unobserve(section));
-    }, [record]);
-
-    const tocItems = [
-        ...(record.has_judgment && record.judgment_text ? [{ id: 'judgment', label: t('judgmentDetailsSection') }] : []),
-        ...(record.has_appeal && record.appeal_text ? [{ id: 'appeal', label: t('appealDetailsSection') }] : []),
-        ...(record.api_message && record.api_message.startsWith('خطأ') ? [{ id: 'error', label: t('errorRecord') }] : []),
-    ];
-
-    return (
-        <div className="record-detail-container">
-            <button onClick={onBack} className="back-to-list-btn">
-                &larr; {t('backToList')}
-            </button>
-            <div className="record-detail-layout">
-                <div className="record-detail-content" ref={contentRef}>
-                    <h2>{record.title || t('caseAnalysisTitle')}</h2>
-                    <div className="record-card-meta">
-                        <span><strong>{t('courtLabel')}:</strong> {record.judgment_court_name || record.appeal_court_name || 'N/A'}</span>
-                        <span><strong>{t('hijriYearLabel')}:</strong> {record.hijri_year || 'N/A'}</span>
-                        <span><strong>{t('judgmentNumberLabel')}:</strong> {record.judgment_number || 'N/A'}</span>
-                    </div>
-
-                    {record.has_judgment && record.judgment_text && (
-                        <details id="judgment" className="admin-card collapsible-section" open>
-                            <summary className="admin-card-header">
-                                <h3>{t('judgmentDetailsSection')}</h3>
-                                <div className="expand-indicator"></div>
-                            </summary>
-                            <div className="admin-card-body">
-                                <pre className="record-text-content">{removeHtml(record.judgment_text)}</pre>
-                            </div>
-                        </details>
-                    )}
-
-                    {record.has_appeal && record.appeal_text && (
-                        <details id="appeal" className="admin-card collapsible-section" open>
-                           <summary className="admin-card-header">
-                                <h3>{t('appealDetailsSection')}</h3>
-                                <div className="expand-indicator"></div>
-                            </summary>
-                            <div className="admin-card-body">
-                                <pre className="record-text-content">{removeHtml(record.appeal_text)}</pre>
-                            </div>
-                        </details>
-                    )}
-
-                    {record.api_message && record.api_message.startsWith('خطأ') && (
-                         <details id="error" className="admin-card collapsible-section" open>
-                            <summary className="admin-card-header">
-                                <h3>{t('errorRecord')}</h3>
-                                <div className="expand-indicator"></div>
-                            </summary>
-                            <div className="admin-card-body">
-                                <p><strong>{t('errorMessageLabel')}:</strong> {record.api_message}</p>
-                                <p><strong>{t('originalUrl')}:</strong> <a href={record.original_url} target="_blank" rel="noopener noreferrer">{record.original_url}</a></p>
-                            </div>
-                        </details>
-                    )}
                 </div>
-                <aside className="record-detail-sidebar">
-                    <div className="admin-card">
-                        <div className="admin-card-header"><h3>{t('tableOfContents')}</h3></div>
-                        <div className="admin-card-body">
-                           {tocItems.length > 0 ? (
-                                <nav className="record-detail-toc">
-                                    <ul>
-                                        {tocItems.map(item => (
-                                            <li key={item.id}>
-                                                <a href={`#${item.id}`} className={activeSection === item.id ? 'active' : ''}>{item.label}</a>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </nav>
-                            ) : <p>{t('noHistoryPlaceholder')}</p>}
-                        </div>
-                    </div>
-                     <div className="admin-card">
-                        <div className="admin-card-header"><h3>{t('casePathfinder')}</h3></div>
-                        <div className="admin-card-body">
-                            <p>{t('pathfinderPlaceholder')}</p>
-                        </div>
-                    </div>
-                </aside>
-            </div>
-        </div>
-    );
-};
-
-const AddCaseModal = ({ isOpen, onClose, onComplete, t }: {
-    isOpen: boolean;
-    onClose: () => void;
-    onComplete: () => void;
-    t: TFunction;
-}) => {
-    const [urls, setUrls] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-    const [results, setResults] = useState<Array<{ url: string; status: 'success' | 'exists' | 'error'; message: string }>>([]);
-
-    const extractIdFromUrl = (url: string) => {
-        try {
-            const parts = url.split('/');
-            return parts[parts.length - 1];
-        } catch {
-            return null;
-        }
-    };
-
-    const handleAddCases = async (e: FormEvent) => {
-        e.preventDefault();
-        setIsLoading(true);
-        setResults([]);
-        
-        const urlList = urls.split('\n').map(u => u.trim()).filter(Boolean);
-        let casesAdded = false;
-
-        const urlRegex = /(https?:\/\/[^\s]+)/;
-
-        for (const rawUrl of urlList) {
-            const match = rawUrl.match(urlRegex);
-            const url = match ? match[0] : rawUrl;
-
-            const caseId = extractIdFromUrl(url);
-            if (!caseId || !url.startsWith('http')) {
-                setResults(prev => [...prev, { url: rawUrl, status: 'error', message: t('addCaseInvalidUrl', rawUrl) }]);
-                continue;
-            }
-
-            try {
-                const response = await fetch(`https://laws-gateway.moj.gov.sa/apis/legislations/v1/Judgements/get-details?id=${caseId}&lang=ar&IdentityNumber=`, {
-                    headers: { "Accept": "application/json", "languageCode": "ar" }
-                });
-
-                if (!response.ok) {
-                    const statusText = response.statusText ? `: ${response.statusText}` : '';
-                    throw new Error(`HTTP Error ${response.status}${statusText}`);
-                }
-                
-                const responseText = await response.text();
-                let data;
-                try {
-                    data = JSON.parse(responseText);
-                } catch (jsonError) {
-                    console.error("Failed to parse JSON from MOJ API:", jsonError);
-                    console.error("Raw response text:", responseText);
-                    throw new Error("InvalidJSON");
-                }
-
-
-                if (!data.apiSuccess) {
-                    const apiError = new Error(data.apiMessage || 'API returned a failure status.');
-                    apiError.name = 'ApiLogicError';
-                    throw apiError;
-                }
-
-                const newRecord = {
-                    ...data,
-                    case_id: caseId,
-                    original_url: url,
-                    scraped_at: new Date().toISOString(),
-                };
-
-                const dbStatus = await addJudicialRecordToDB(newRecord);
-                if (dbStatus === 'success') {
-                    setResults(prev => [...prev, { url: rawUrl, status: 'success', message: t('addCaseSuccess', data.judgmentNumber || caseId) }]);
-                    casesAdded = true;
-                } else {
-                    setResults(prev => [...prev, { url: rawUrl, status: 'exists', message: t('addCaseExists') }]);
-                }
-
-            } catch (error) {
-                const errorInstance = error instanceof Error ? error : new Error(String(error));
-                let finalMessage = '';
-                
-                if (errorInstance.name === 'TypeError') { // Network errors like "Failed to fetch"
-                    finalMessage = t('addCaseApiErrorNetwork');
-                } else if (errorInstance.message.startsWith('HTTP Error')) {
-                    const status = errorInstance.message.replace('HTTP Error ', '');
-                    finalMessage = t('addCaseApiErrorStatus', status);
-                } else if (errorInstance.message === 'InvalidJSON') {
-                    finalMessage = t('addCaseApiErrorParse');
-                } else if (errorInstance.name === 'ApiLogicError') {
-                    finalMessage = t('addCaseApiLogicError', errorInstance.message);
-                } else {
-                    // Generic fallback for any other unexpected errors.
-                    finalMessage = t('addCaseApiError', errorInstance.message);
-                }
-                setResults(prev => [...prev, { url: rawUrl, status: 'error', message: finalMessage }]);
-            }
-        }
-
-        if (casesAdded) {
-            onComplete();
-        }
-        setIsLoading(false);
-    };
-
-    if (!isOpen) return null;
-
-    return (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="add-case-title">
-            <div className="modal-content" style={{ maxWidth: '600px' }}>
-                <h3 id="add-case-title">{t('addCaseModalTitle')}</h3>
-                <p>{t('addCaseModalDescription')}</p>
-                <form onSubmit={handleAddCases}>
-                    <div className="form-group">
-                        <label htmlFor="case-urls">{t('urlInputLabel')}</label>
-                        <textarea
-                            id="case-urls"
-                            rows={8}
-                            placeholder={t('urlInputPlaceholder')}
-                            value={urls}
-                            onChange={(e) => setUrls(e.target.value)}
-                            disabled={isLoading}
-                        />
-                    </div>
-                    {results.length > 0 && (
-                        <div className="add-case-results">
-                            {results.map((res, index) => (
-                                <div key={index} className={`result-item ${res.status}`}>
-                                    <span className="result-url" title={res.url}>{res.url}</span>
-                                    <span className="result-message">{res.message}</span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                    <div className="modal-actions">
-                        <button type="button" className="dialog-cancel-btn" onClick={onClose} disabled={isLoading}>{t('closeButtonLabel')}</button>
-                        <button type="submit" disabled={isLoading || !urls.trim()}>
-                            {isLoading ? t('addingButton') : t('addButton')}
-                        </button>
-                    </div>
+                <form onSubmit={handleAddTag} className="add-tag-form">
+                    <input type="text" value={tagInput} onChange={(e) => setTagInput(e.target.value)} placeholder={t('addTagPlaceholder')} />
+                    <button type="submit">{t('addTagButtonLabel')}</button>
                 </form>
             </div>
         </div>
     );
 };
 
-const LegalCaseSearchEngine = ({ t }: { t: TFunction }) => {
-    const [records, setRecords] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
-    const [isFetching, setIsFetching] = useState(false);
-    const [fetchMessage, setFetchMessage] = useState<{ type: 'success' | 'info' | 'error', text: string } | null>(null);
+const HistoryView: React.FC<{ history: CaseRecord[], filter: string, setFilter: (f: string) => void, clearHistory: () => void, exportHistory: () => void, setHistory: React.Dispatch<React.SetStateAction<CaseRecord[]>>, t: TFunction, dateLocale: any, allTags: string[], activeTag: string | null, setActiveTag: (t: string | null) => void, analyzeCase: (text: string, sourceName: string) => Promise<CaseRecord>, getGeminiSchema: any }> = ({ history, filter, setFilter, clearHistory, exportHistory, setHistory, t, dateLocale, allTags, activeTag, setActiveTag, analyzeCase, getGeminiSchema }) => {
 
+    const handleDelete = async (id: number) => {
+        try {
+            await deleteCaseFromDB(id);
+            setHistory(prev => prev.filter(c => c.id !== id));
+            await addLogEntry('CASE_DELETED', `Deleted case ID: ${id}`);
+        } catch (error) {
+            console.error(t('errorDeleteCase'), error);
+            alert(t('errorDeleteCase'));
+        }
+    };
+    
+    const handleUpdate = async (id: number, updatedRecord: CaseRecord) => {
+        try {
+            await putCaseInDB(updatedRecord);
+            setHistory(prev => prev.map(c => c.id === id ? updatedRecord : c));
+            await addLogEntry('CASE_UPDATED', `Updated case ID: ${id}`);
+        } catch (error) {
+            console.error(t('errorUpdateCase', String(error)));
+            alert(t('errorUpdateCase', String(error)));
+        }
+    };
+
+    const handleRetry = async (recordToRetry: CaseRecord) => {
+        if (!recordToRetry.id) return;
+
+        const placeholder: CaseRecord = { ...recordToRetry, loading: true };
+        setHistory(prev => prev.map(c => c.id === recordToRetry.id ? placeholder : c));
+        
+        const newRecord = await analyzeCase(recordToRetry.originalText, `Retry of Case ID ${recordToRetry.id}`);
+        
+        // The analyzeCase function already saves to DB, we just need to update the UI state.
+        // It returns a full record with a *new* ID. We need to replace the old one.
+        await deleteCaseFromDB(recordToRetry.id); // Delete the old error record
+        setHistory(prev => {
+            const historyWithoutOld = prev.filter(c => c.id !== recordToRetry.id);
+            return [newRecord, ...historyWithoutOld].sort((a,b) => b.timestamp - a.timestamp);
+        });
+    };
+
+    return (
+        <>
+            <h2>{t('analysisHistoryTitle')}</h2>
+            <div className="history-controls">
+                <div className="filter-input-container">
+                    <input type="text" placeholder={t('filterPlaceholder')} value={filter} onChange={(e) => setFilter(e.target.value)} />
+                    {filter && <button onClick={() => setFilter('')} className="clear-search-btn" aria-label={t('clearSearchLabel')}>&times;</button>}
+                </div>
+                <button onClick={exportHistory}>{t('exportHistoryButton')}</button>
+                <button onClick={clearHistory} className="danger">{t('clearHistoryButton')}</button>
+            </div>
+            {allTags.length > 0 && (
+                 <div className="tag-filter-bar">
+                    <button className={`tag-filter ${activeTag === null ? 'active' : ''}`} onClick={() => setActiveTag(null)}>{t('allRecords')}</button>
+                    {allTags.map(tag => (
+                       <button key={tag} className={`tag-filter ${activeTag === tag ? 'active' : ''}`} onClick={() => setActiveTag(tag)}>{tag}</button>
+                    ))}
+                </div>
+            )}
+            <div className="history-list">
+                {history.length > 0 ? (
+                    history.map(record => (
+                        <ResultCard 
+                          key={record.id || record.timestamp} 
+                          record={record}
+                          onDelete={handleDelete}
+                          onUpdate={handleUpdate}
+                          onRetry={handleRetry}
+                          t={t}
+                          dateLocale={dateLocale}
+                          setActiveTag={setActiveTag}
+                        />
+                    ))
+                ) : (
+                    <div className="placeholder">
+                        <p>{filter ? t('noFilterResultsPlaceholder') : t('noHistoryPlaceholder')}</p>
+                    </div>
+                )}
+            </div>
+        </>
+    );
+};
+
+const JudicialRecordsViewer: React.FC<{ records: any[], setRecords: React.Dispatch<React.SetStateAction<any[]>>, selectedRecord: any | null, setSelectedRecord: React.Dispatch<React.SetStateAction<any | null>>, isLoading: boolean, setIsLoading: React.Dispatch<React.SetStateAction<boolean>>, t: TFunction }> = ({ records, selectedRecord, setSelectedRecord, isLoading, t }) => {
     const [filters, setFilters] = useState({
         keyword: '',
         court: '',
         city: '',
         year: '',
-        appeal: 'all',
-        decision: 'all',
+        appeal: 'All',
+        decision: 'All',
     });
 
-    const loadRecords = useCallback(async () => {
-        setLoading(true);
-        try {
-            const dbRecords = await getJudicialRecordsFromDB();
-            setRecords(dbRecords);
-        } catch (error) {
-            console.error("Failed to load judicial records from DB:", error);
-        } finally {
-            setLoading(false);
-        }
-    }, []);
+    const handleFilterChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        setFilters({ ...filters, [e.target.name]: e.target.value });
+    };
 
-    useEffect(() => {
-        loadRecords();
-    }, [loadRecords]);
+    const resetFilters = () => {
+        setFilters({ keyword: '', court: '', city: '', year: '', appeal: 'All', decision: 'All' });
+    };
 
     const filteredRecords = useMemo(() => {
-        return records.filter(r => {
-            const lowerKeyword = filters.keyword.toLowerCase().trim();
-            const lowerCourt = filters.court.toLowerCase().trim();
-            const lowerCity = filters.city.toLowerCase().trim();
-            const year = filters.year.trim();
+        return records.filter(rec => {
+            const keywordMatch = filters.keyword ? JSON.stringify(rec).toLowerCase().includes(filters.keyword.toLowerCase()) : true;
+            const courtMatch = filters.court ? (rec.judgment_court_name || '').toLowerCase().includes(filters.court.toLowerCase()) : true;
+            const cityMatch = filters.city ? (rec.judgment_city_name || '').toLowerCase().includes(filters.city.toLowerCase()) : true;
+            const yearMatch = filters.year ? String(rec.hijri_year) === filters.year : true;
+            const appealMatch = filters.appeal === 'All' ? true : (filters.appeal === 'With Appeal' ? rec.has_appeal : !rec.has_appeal);
+            const decisionMatch = filters.decision === 'All' ? true : (rec.judgment_ruling === filters.decision);
 
-            if (lowerKeyword && !(
-                (r.title?.toLowerCase() || '').includes(lowerKeyword) ||
-                (removeHtml(r.judgment_text)?.toLowerCase() || '').includes(lowerKeyword) ||
-                (removeHtml(r.appeal_text)?.toLowerCase() || '').includes(lowerKeyword)
-            )) return false;
-
-            if (lowerCourt && !(
-                (r.judgment_court_name?.toLowerCase() || '').includes(lowerCourt) ||
-                (r.appeal_court_name?.toLowerCase() || '').includes(lowerCourt)
-            )) return false;
-
-            if (lowerCity && !(
-                (r.judgment_city_name?.toLowerCase() || '').includes(lowerCity) ||
-                (r.appeal_city_name?.toLowerCase() || '').includes(lowerCity)
-            )) return false;
-
-            if (year && r.hijri_year?.toString() !== year) return false;
-
-            if (filters.appeal !== 'all' && ((filters.appeal === 'with') ? !r.has_appeal : r.has_appeal)) return false;
-
-            if (filters.decision !== 'all' && !(
-                r.judgment_ruling === filters.decision ||
-                r.appeal_ruling === filters.decision
-            )) return false;
-
-            return true;
+            return keywordMatch && courtMatch && cityMatch && yearMatch && appealMatch && decisionMatch;
         });
     }, [records, filters]);
-
-    const handleFilterChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        setFilters(prev => ({ ...prev, [name]: value }));
-    };
-
-    const handleResetFilters = () => {
-        setFilters({ keyword: '', court: '', city: '', year: '', appeal: 'all', decision: 'all' });
-        setFetchMessage(null);
-    };
-
-    const handleSearch = async (e: FormEvent) => {
-        e.preventDefault();
-        setIsFetching(true);
-        setFetchMessage({ type: 'info', text: t('fetchingCases') });
-
-        try {
-            const searchParams: any = {
-                SearchText: filters.keyword,
-                PageNumber: 1,
-                PageSize: 50,
-                SortBy: "Default",
-                JudgementType: 0,
-            };
-            if (filters.court) searchParams.Courts = [filters.court];
-            if (filters.city) searchParams.Cities = [filters.city];
-            if (filters.year) searchParams.HijriYear = parseInt(filters.year, 10);
-            if (filters.appeal !== 'all') searchParams.HasAppeal = filters.appeal === 'with';
-            if (filters.decision !== 'all') searchParams.Rulings = [filters.decision];
-
-            const response = await fetch('https://laws-gateway.moj.gov.sa/apis/legislations/v1/Judgements/search', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'languageCode': 'ar' },
-                body: JSON.stringify(searchParams)
-            });
-
-            if (!response.ok) {
-                throw new Error(`API Error: ${response.status} ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            if (!data.apiSuccess || !Array.isArray(data.items)) {
-                throw new Error(data.apiMessage || 'Invalid API response format');
-            }
-
-            let newCasesCount = 0;
-            for (const item of data.items) {
-                const newRecord = {
-                    ...item,
-                    case_id: item.id,
-                    original_url: `https://laws.moj.gov.sa/ar/JudicialDecisionsList/0/${item.id}`,
-                    scraped_at: new Date().toISOString(),
-                };
-                const dbStatus = await addJudicialRecordToDB(newRecord);
-                if (dbStatus === 'success') newCasesCount++;
-            }
-
-            if (newCasesCount > 0) {
-                setFetchMessage({ type: 'success', text: t('fetchCasesSuccess', newCasesCount) });
-                await loadRecords();
-            } else if (data.items.length > 0) {
-                setFetchMessage({ type: 'info', text: t('noNewCasesFound') });
-            } else {
-                setFetchMessage({ type: 'info', text: t('noRecordsFound') });
-            }
-
-        } catch (error) {
-            console.error("Failed to fetch judicial records from API:", error);
-            const errorInstance = error instanceof Error ? error : new Error(String(error));
-            let finalMessage = t('fetchCasesError');
-
-            if (errorInstance.name === 'TypeError') { // Network errors like "Failed to fetch"
-                const networkErrorPart = t('addCaseApiErrorNetwork').substring(t('addCaseApiErrorNetwork').indexOf(':') + 1).trim();
-                finalMessage = `${t('fetchCasesError')} ${networkErrorPart}`;
-            } else {
-                finalMessage = `${t('fetchCasesError')} ${errorInstance.message}`;
-            }
-            setFetchMessage({ type: 'error', text: finalMessage });
-        } finally {
-            setIsFetching(false);
-        }
-    };
-
-    if (loading) {
-        return <JudicialRecordsSkeletonLoader />;
-    }
-
+    
     if (selectedRecord) {
-        return <RecordDetailView record={selectedRecord} onBack={() => setSelectedRecord(null)} t={t} />;
+        return (
+            <div className="record-detail-view">
+                <button onClick={() => setSelectedRecord(null)} className="back-btn"><span className="material-symbols-outlined">arrow_back</span> {t('backToList')}</button>
+                <h2>{selectedRecord.title}</h2>
+                <div className="details-grid">
+                    <p><strong>{t('judgmentNumberLabel')}:</strong> {selectedRecord.judgment_number}</p>
+                    <p><strong>{t('judgmentHijriDateLabel')}:</strong> {selectedRecord.judgment_hijri_date}</p>
+                    <p><strong>{t('judgmentCourtNameLabel')}:</strong> {selectedRecord.judgment_court_name}</p>
+                    <p><strong>{t('judgmentCityNameLabel')}:</strong> {selectedRecord.judgment_city_name}</p>
+                    <p><strong>{t('judgmentRulingLabel')}:</strong> {selectedRecord.judgment_ruling}</p>
+                    {selectedRecord.has_appeal && <>
+                        <p><strong>{t('appealNumberLabel')}:</strong> {selectedRecord.appeal_number}</p>
+                        <p><strong>{t('appealHijriDateLabel')}:</strong> {selectedRecord.appeal_hijri_date}</p>
+                        <p><strong>{t('appealCourtNameLabel')}:</strong> {selectedRecord.appeal_court_name}</p>
+                    </>}
+                </div>
+                <hr/>
+                <details>
+                    <summary>{t('judgmentTextOfRulingLabel')}</summary>
+                    <div className="record-text" dangerouslySetInnerHTML={{ __html: selectedRecord.judgment_text }}></div>
+                </details>
+                {selectedRecord.has_appeal && selectedRecord.appeal_text && (
+                     <details>
+                        <summary>{t('appealTextOfRulingLabel')}</summary>
+                        <div className="record-text" dangerouslySetInnerHTML={{ __html: selectedRecord.appeal_text }}></div>
+                    </details>
+                )}
+                <hr/>
+                 <a href={selectedRecord.original_url} target="_blank" rel="noopener noreferrer" className="link-button">{t('originalUrl')}</a>
+            </div>
+        )
     }
 
     return (
-        <div className="records-viewer-layout">
-            <aside className="records-sidebar">
-                <form onSubmit={handleSearch} className="filters-form">
+        <>
+            <h2 className="page-title">{t('judicialRecordsTab')}</h2>
+            <div className="records-viewer-layout">
+                <aside className="records-sidebar">
                     <h3>{t('filtersTitle')}</h3>
                     <div className="filter-group">
                         <label htmlFor="keyword">{t('searchByKeyword')}</label>
-                        <input type="search" id="keyword" name="keyword" placeholder={t('searchByKeywordPlaceholder')} value={filters.keyword} onChange={handleFilterChange} />
+                        <input type="text" id="keyword" name="keyword" value={filters.keyword} onChange={handleFilterChange} placeholder={t('searchByKeywordPlaceholder')} />
                     </div>
                     <div className="filter-group">
                         <label htmlFor="court">{t('filterByCourt')}</label>
-                        <input type="search" id="court" name="court" placeholder={t('filterByCourtPlaceholder')} value={filters.court} onChange={handleFilterChange} />
+                        <input type="text" id="court" name="court" value={filters.court} onChange={handleFilterChange} placeholder={t('filterByCourtPlaceholder')} />
                     </div>
                     <div className="filter-group">
                         <label htmlFor="city">{t('filterByCity')}</label>
-                        <input type="text" id="city" name="city" placeholder={t('filterByCourtPlaceholder')} value={filters.city} onChange={handleFilterChange} />
+                        <input type="text" id="city" name="city" value={filters.city} onChange={handleFilterChange} />
                     </div>
                     <div className="filter-group">
                         <label htmlFor="year">{t('filterByYear')}</label>
-                        <input type="number" id="year" name="year" placeholder="1445" value={filters.year} onChange={handleFilterChange} />
+                        <input type="number" id="year" name="year" value={filters.year} onChange={handleFilterChange} />
                     </div>
                     <div className="filter-group">
                         <label htmlFor="appeal">{t('filterByAppeal')}</label>
                         <select id="appeal" name="appeal" value={filters.appeal} onChange={handleFilterChange}>
-                            <option value="all">{t('allRecords')}</option>
-                            <option value="with">{t('withAppeal')}</option>
-                            <option value="without">{t('withoutAppeal')}</option>
+                            <option value="All">{t('allRecords')}</option>
+                            <option value="With Appeal">{t('withAppeal')}</option>
+                            <option value="Without Appeal">{t('withoutAppeal')}</option>
                         </select>
                     </div>
                     <div className="filter-group">
                         <label htmlFor="decision">{t('filterByDecision')}</label>
                         <select id="decision" name="decision" value={filters.decision} onChange={handleFilterChange}>
-                            <option value="all">{t('allRecords')}</option>
-                            <option value={t('rulingTypeElzam')}>{t('rulingTypeElzam')}</option>
-                            <option value={t('rulingTypeNoJurisdiction')}>{t('rulingTypeNoJurisdiction')}</option>
-                            <option value={t('rulingTypeDismissal')}>{t('rulingTypeDismissal')}</option>
-                            <option value={t('rulingTypeNonAcceptance')}>{t('rulingTypeNonAcceptance')}</option>
+                            <option value="All">{t('allRecords')}</option>
+                            <option value="إلزام">{t('rulingTypeElzam')}</option>
+                            <option value="عدم اختصاص">{t('rulingTypeNoJurisdiction')}</option>
+                            <option value="رفض">{t('rulingTypeDismissal')}</option>
+                            <option value="عدم قبول">{t('rulingTypeNonAcceptance')}</option>
                         </select>
                     </div>
-                    <div className="filter-buttons">
-                        <button type="submit" disabled={isFetching}>{isFetching ? t('fetchingCases') : t('searchButton')}</button>
-                        <button type="button" onClick={handleResetFilters} disabled={isFetching}>{t('resetFilters')}</button>
-                    </div>
-                </form>
-            </aside>
-            <main className="records-main-content">
-                {fetchMessage && (
-                    <div className={`fetch-message-bar ${fetchMessage.type}`}>
-                        {fetchMessage.text}
-                    </div>
-                )}
-                {filteredRecords.length > 0 ? (
-                    <div className="records-list">
-                        {filteredRecords.map(record => (
-                            <div key={record.case_id} className={`record-card ${record.api_message && record.api_message.startsWith('خطأ') ? 'error-record' : ''}`} onClick={() => setSelectedRecord(record)} role="button" tabIndex={0}>
-                                <h4>{record.title || t('caseAnalysisTitle')} ({t('judgmentNumberPrefix')}{record.judgment_number || 'N/A'})</h4>
-                                <div className="record-card-meta">
-                                    <span><strong>{t('courtLabel')}:</strong> {record.judgment_court_name || 'N/A'}</span>
-                                    <span><strong>{t('dateLabel')}:</strong> {record.judgment_date?.split('T')[0] || 'N/A'}</span>
-                                </div>
-                                <details onClick={(e) => e.stopPropagation()} className="record-details-expander">
-                                    <summary>{t('clickViewDetails')}</summary>
-                                    <div className="record-details-content">
-                                        <strong>{t('factsLabel')}:</strong>
-                                        <textarea readOnly value={removeHtml(record.judgment_facts) || 'N/A'} rows={5}></textarea>
-                                        <strong>{t('reasonsLabel')}:</strong>
-                                        <textarea readOnly value={removeHtml(record.judgment_reasons) || 'N/A'} rows={5}></textarea>
-                                        <strong>{t('rulingLabel')}:</strong>
-                                        <textarea readOnly value={removeHtml(record.judgment_ruling) || 'N/A'} rows={5}></textarea>
-                                    </div>
-                                </details>
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    !isFetching && <div className="placeholder">{t('noRecordsFound')}</div>
-                )}
-            </main>
-        </div>
-    );
-};
-
-
-function App() {
-  const [caseText, setCaseText] = useState('');
-  const [uploadedFiles, setUploadedFiles] = useState<FileList | null>(null);
-  const [analysisResults, setAnalysisResults] = useState<CaseRecord[]>([]);
-  const [schema, setSchema] = useState<EditableSchema>(DEFAULT_EDITABLE_SCHEMA);
-  const [loading, setLoading] = useState(false);
-  const [dbLoading, setDbLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [language, setLanguage] = useState(localStorage.getItem('judgment-analyzer-lang') || 'ar');
-  const [theme, setTheme] = useState(localStorage.getItem('judgment-analyzer-theme') || 'light');
-  const [activeTab, setActiveTab] = useState('judicialRecords');
-  const [dialogConfig, setDialogConfig] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: (() => void) | null;
-  }>({ isOpen: false, title: '', message: '', onConfirm: null });
-  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; step: 'parsing' | 'analyzing' } | null>(null);
-  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
-  const [view, setView] = useState<'app' | 'admin'>('app');
-  const [isDraggingOver, setIsDraggingOver] = useState(false);
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('judgment-analyzer-theme', theme);
-  }, [theme]);
-
-  useEffect(() => {
-    localStorage.setItem('judgment-analyzer-lang', language);
-    document.documentElement.lang = language;
-    document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
-  }, [language]);
-  
-
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-        const registerServiceWorker = () => {
-            const path = window.location.pathname;
-            const scope = path.substring(0, path.lastIndexOf('/') + 1);
-            const swUrl = scope + 'service-worker.js';
-
-            navigator.serviceWorker.register(swUrl, { type: 'module' })
-                .then(registration => {
-                    console.log('ServiceWorker registration successful');
-
-                    const initWorker = () => {
-                        if (navigator.serviceWorker.controller) {
-                            navigator.serviceWorker.controller.postMessage({
-                                type: 'INIT_ANALYZER',
-                                payload: { apiKey: process.env.API_KEY }
-                            });
-                        }
-                    };
-
-                    if (navigator.serviceWorker.controller) {
-                        initWorker();
-                    } else {
-                        navigator.serviceWorker.addEventListener('controllerchange', initWorker, { once: true });
-                    }
-                })
-                .catch(err => console.error('ServiceWorker registration failed: ', err));
-        };
-
-        // Defer registration until after the page has loaded to avoid "invalid state" errors.
-        window.addEventListener('load', registerServiceWorker);
-
-        const handleMessage = (event: MessageEvent) => {
-            const { type, payload } = event.data;
-            if (type === 'ANALYSIS_PROGRESS') {
-                const { record, placeholderTimestamp } = payload;
-                setAnalysisResults(prev => prev.map(r => (r.timestamp === placeholderTimestamp ? record : r)));
-                setUploadProgress(prev => prev ? ({ ...prev, current: prev.current + 1 }) : null);
-            } else if (type === 'ANALYSIS_COMPLETE') {
-                resetUploadState();
-            }
-        };
-        navigator.serviceWorker.addEventListener('message', handleMessage);
-
-        return () => {
-            window.removeEventListener('load', registerServiceWorker);
-            navigator.serviceWorker.removeEventListener('message', handleMessage);
-        };
-    }
-  }, []); // Should only run once
-
-
-  const t = useCallback((key: TranslationKey, ...args: any[]) => {
-    const lang = language as 'ar' | 'en';
-    const entry = translations[lang][key] || translations.en[key];
-    if (typeof entry === 'function') {
-      return (entry as any)(...args);
-    }
-    return entry;
-  }, [language]);
-
-  useEffect(() => {
-    const seedDatabase = async () => {
-      try {
-        const isSeeded = localStorage.getItem('judicialRecordsSeeded_v3');
-        if (isSeeded) return;
-
-        const db = await openDB();
-        const transaction = db.transaction(JUDICIAL_RECORDS_STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(JUDICIAL_RECORDS_STORE_NAME);
-        
-        const clearRequest = store.clear();
-        await new Promise<void>((resolve, reject) => {
-            clearRequest.onsuccess = () => resolve();
-            clearRequest.onerror = (event) => reject((event.target as IDBRequest).error);
-        });
-        
-        for (const record of judicialData) {
-            if (record.case_id) {
-                store.put(record);
-            }
-        }
-
-        await new Promise<void>((resolve, reject) => {
-            transaction.oncomplete = () => resolve();
-            transaction.onerror = (event) => reject((event.target as IDBRequest).error);
-        });
-        
-        localStorage.setItem('judicialRecordsSeeded_v3', 'true');
-        console.log("Judicial records database seeded successfully.");
-      } catch (error) {
-        console.error("Failed to seed judicial records database:", error);
-      }
-    };
-
-    const loadData = async () => {
-      setDbLoading(true);
-      try {
-        await seedDatabase();
-        const history = await getAllCasesFromDB();
-        const customSchema = getCustomSchemaFromLocalStorage();
-        
-        setAnalysisResults(history);
-        if (customSchema) {
-          setSchema(customSchema);
-        }
-      } catch (err) {
-        console.error("Failed to load data:", err);
-        setError(t('errorLoadHistory'));
-      } finally {
-        setDbLoading(false);
-      }
-    };
-    loadData();
-  }, [t]);
-  
-  const handleSchemaUpdate = async (newSchema: EditableSchema) => {
-    try {
-      saveCustomSchemaToLocalStorage(newSchema);
-      setSchema(newSchema);
-      await addLogEntry('SCHEMA_UPDATED', `Custom schema was updated with ${newSchema.length} fields.`);
-    } catch (err) {
-        console.error("Failed to save schema", err);
-        throw err;
-    }
-  };
-  
-  const processSelectedFiles = (files: FileList | null): boolean => {
-    if (files && files.length > 0) {
-        const allowedExtensions = ['.json', '.jsonl', '.txt', '.md'];
-        const allValid = Array.from(files).every(file => 
-            allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
-        );
-
-        if (allValid) {
-            setUploadedFiles(files);
-            setCaseText(''); // Clear textarea when files are selected
-            setError('');
-            return true;
-        }
-    }
-    setError(t('errorInvalidFile'));
-    setUploadedFiles(null);
-    return false;
-  };
-
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (!processSelectedFiles(e.target.files)) {
-        // Reset file input if validation fails
-        e.target.value = '';
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleDragEnter = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
-      setIsDraggingOver(true);
-    }
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDraggingOver(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDraggingOver(false);
-    processSelectedFiles(e.dataTransfer.files);
-  };
-
-  const resetUploadState = useCallback(() => {
-    setLoading(false);
-    setIsBatchProcessing(false);
-    setUploadedFiles(null);
-    setUploadProgress(null);
-    const fileInput = document.getElementById('file-upload') as HTMLInputElement;
-    if (fileInput) fileInput.value = '';
-  }, []);
-
-  const classifyError = (err: unknown, rawResponse?: string): CaseError => {
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    const raw = rawResponse || errorMessage;
-
-    if (err instanceof SyntaxError) {
-        return {
-            title: t('errorParsingTitle'),
-            summary: t('errorParsingMessage'),
-            breakdown: {
-                whatHappened: t('errorParsingWhatHappened'),
-                possibleCauses: [t('errorParsingCauseAmbiguous'), t('errorParsingCauseModelCreative'), t('errorParsingCauseGlitch')],
-                howToFix: [t('errorParsingFixRephrase'), t('errorParsingFixRetry'), t('errorParsingFixValidateJson')]
-            },
-            raw
-        };
-    }
-
-    if (/rate limit/i.test(errorMessage)) {
-         return {
-            title: t('errorRateLimitTitle'),
-            summary: t('errorRateLimitMessage'),
-            breakdown: {
-                whatHappened: t('errorRateLimitWhatHappened'),
-                possibleCauses: [t('errorRateLimitCauseManyRequests'), t('errorRateLimitCauseSharedResource')],
-                howToFix: [t('errorRateLimitFixWait'), t('errorRateLimitFixBatch')]
-            },
-            raw
-        };
-    }
-
-     if (/API key not valid/i.test(errorMessage)) {
-         return {
-            title: t('errorApiKeyTitle'),
-            summary: t('errorApiKeyMessage'),
-            breakdown: {
-                whatHappened: t('errorApiKeyWhatHappened'),
-                possibleCauses: [t('errorApiKeyCauseInvalid'), t('errorApiKeyCauseExpired')],
-                howToFix: [t('errorApiKeyFixCheckConfig')]
-            },
-            raw
-        };
-    }
-
-    if (/input token count exceeds/i.test(errorMessage)) {
-      return {
-          title: t('errorTokenLimitTitle'),
-          summary: t('errorTokenLimitMessage'),
-          breakdown: {
-                whatHappened: t('errorTokenLimitWhatHappened'),
-                possibleCauses: [t('errorTokenLimitCauseLargeDoc'), t('errorTokenLimitCauseCombinedCases')],
-                howToFix: [t('errorTokenLimitFixSplit'), t('errorTokenLimitFixSeparate')]
-            },
-          raw
-      };
-    }
-
-    // FIX: Refactored to simplify the type check and remove the check for the deprecated 'GoogleGenerativeAIError'.
-    if (err instanceof Error) {
-        if (/safety|blocked by response safety settings/i.test(errorMessage)) {
-            return {
-                title: t('errorSafetyTitle'),
-                summary: t('errorSafetyMessage'),
-                breakdown: {
-                    whatHappened: t('errorSafetyWhatHappened'),
-                    possibleCauses: [t('errorSafetyCauseInput'), t('errorSafetyCauseOutput')],
-                    howToFix: [t('errorSafetyFixReview'), t('errorSafetyFixSimplify')]
-                },
-                raw
-            };
-        }
-        if (/must provide a non-empty text/i.test(errorMessage) || /insufficient/i.test(errorMessage)) {
-            return {
-                title: t('errorShortTextTitle'),
-                summary: t('errorShortTextMessage'),
-                breakdown: {
-                    whatHappened: t('errorShortTextWhatHappened'),
-                    possibleCauses: [t('errorShortTextCauseEmpty'), t('errorShortTextCauseLacksContext')],
-                    howToFix: [t('errorShortTextFixProvideMore'), t('errorShortTextFixCheckFile')]
-                },
-                raw
-            };
-        }
-        if (/malformed/i.test(errorMessage) || /could not parse/i.test(errorMessage)) {
-             return {
-                title: t('errorUnclearTextTitle'),
-                summary: t('errorUnclearTextMessage'),
-                breakdown: {
-                    whatHappened: t('errorUnclearTextWhatHappened'),
-                    possibleCauses: [t('errorUnclearTextCauseFormatting'), t('errorUnclearTextCauseLanguage')],
-                    howToFix: [t('errorUnclearTextFixFormat'), t('errorUnclearTextFixValidCase')]
-                },
-                raw
-            };
-        }
-        return {
-            title: t('errorApiTitle'),
-            summary: t('errorApiMessage'),
-            breakdown: {
-                whatHappened: t('errorApiWhatHappened'),
-                possibleCauses: [t('errorApiCauseSafety'), t('errorApiCauseInvalidInput')],
-                howToFix: [t('errorApiFixSimplify'), t('errorApiFixCheckRaw')]
-            },
-            raw
-        };
-    }
-
-
-    return {
-        title: t('analysisFailedTitle'),
-        summary: t('errorFailedCase', errorMessage),
-        breakdown: {
-            whatHappened: t('errorGenericWhatHappened'),
-            possibleCauses: [t('errorGenericCauseUnknown')],
-            howToFix: [t('errorGenericFixRetry'), t('errorGenericFixEditText')]
-        },
-        raw
-    };
-  }
-  
-  const handleAnalyze = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!caseText.trim() && !uploadedFiles) {
-        setError(t('errorPasteOrUpload'));
-        if (activeTab !== 'input') setActiveTab('input');
-        return;
-    }
-
-    setError('');
-
-    // The entire form is now considered a batch process, so these flags are set for all analysis paths.
-    setLoading(true);
-    setIsBatchProcessing(true);
-    setActiveTab('history');
-
-    let allCasesToAnalyze: { text: string; source: string }[] = [];
-
-    try {
-        if (uploadedFiles) {
-            const files = Array.from(uploadedFiles);
-            setUploadProgress({ current: 0, total: files.length, step: 'parsing' });
-
-            for (let index = 0; index < files.length; index++) {
-                const file = files[index] as File;
-                setUploadProgress({ current: index + 1, total: files.length, step: 'parsing' });
-                const casesFromFile = await parseFile(file, t);
-                casesFromFile.forEach(text => {
-                    allCasesToAnalyze.push({ text, source: file.name });
-                });
-            }
-        } else if (caseText.trim()) {
-            const cases = caseText.trim().split(/\n\s*---\s*\n|\n{3,}/);
-            const filteredCases = cases.filter(c => c.trim());
-
-            if (filteredCases.length === 0) {
-                throw new Error(t('errorShortTextMessage'));
-            }
-
-            setCaseText('');
-
-            filteredCases.forEach((text, index) => {
-                const sourceName = filteredCases.length > 1
-                    ? t('caseTextBatchSource', index + 1)
-                    : t('caseTextLabel');
-                allCasesToAnalyze.push({ text, source: sourceName });
-            });
-        }
-    } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        console.error("File/Text parsing failed:", err);
-        setError(errorMessage);
-        resetUploadState(); // This sets loading to false etc.
-        return;
-    }
-
-    if (allCasesToAnalyze.length === 0) {
-        setError(t('errorFileNoCases'));
-        resetUploadState();
-        return;
-    }
-
-    // --- Unified Batch Processing Logic (for 1 or more cases) ---
-    const placeholderRecords: CaseRecord[] = allCasesToAnalyze.map((caseItem, index) => ({
-        originalText: `${t('caseAnalysisTitle')} from ${caseItem.source}`,
-        timestamp: Date.now() + index,
-        loading: true,
-    }));
-    setAnalysisResults(prev => [...placeholderRecords.reverse(), ...prev]);
-    setUploadProgress({ current: 0, total: allCasesToAnalyze.length, step: 'analyzing' });
-
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.ready.then(registration => {
-            registration.active?.postMessage({
-                type: 'START_ANALYSIS',
-                payload: {
-                    cases: allCasesToAnalyze,
-                    schema,
-                    placeholderRecords,
-                    errorTemplates: {
-                        title: t('analysisFailedTitle'),
-                        message: (err: string) => t('errorFailedCase', err),
-                    }
-                }
-            });
-        }).catch(err => {
-            console.error("Service worker failed to become ready:", err);
-            setError("Background analysis service failed to start. Please reload.");
-            resetUploadState();
-        });
-    } else {
-        setError("Background analysis is not supported on this browser.");
-        resetUploadState();
-    }
-  };
-  
-  const handleRetry = async (caseToRetry: CaseRecord, newText?: string) => {
-    const textToAnalyze = newText ?? caseToRetry.originalText;
-    
-    const tempId = caseToRetry.id || Date.now();
-
-    setAnalysisResults(prev => prev.map(r =>
-      (r.id === tempId || r.timestamp === caseToRetry.timestamp) ? { ...caseToRetry, originalText: textToAnalyze, loading: true, error: undefined } : r
-    ));
-
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const geminiSchema = convertEditableSchemaToGemini(schema);
-
-    let rawResponseText: string | undefined;
-    try {
-      const prompt = `Analyze the following legal case text in its original Arabic language from Saudi Arabia and extract the specified information in JSON format according to the provided schema. For any fields that expect long-form text (like facts, reasons, rulings), use simple markdown for formatting: use '**text**' for bolding, '*text*' for italics, '~~text~~' for strikethrough, start lines with '* ' for bullet points, '1. ' for numbered lists, and use Markdown tables for tabular data. If a field is not present in the text, use null for its value. Here is the case text: \n\n${textToAnalyze}`;
-      const response = await ai.models.generateContent({
-        // Use Gemini Pro for more complex analysis as requested.
-        model: 'gemini-2.5-pro',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: geminiSchema,
-        },
-      });
-      rawResponseText = response.text;
-      const analysis = JSON.parse(rawResponseText);
-      const successfulRecord: CaseRecord = {
-        id: caseToRetry.id,
-        originalText: textToAnalyze,
-        analysis,
-        timestamp: Date.now(),
-        loading: false,
-        error: undefined,
-        tags: caseToRetry.tags || []
-      };
-      const newId = await putCaseInDB(successfulRecord);
-      addLogEntry('CASE_RETRY_SUCCESS', `Successfully re-analyzed case. Original timestamp: ${caseToRetry.timestamp}. New ID: ${newId}`);
-      setAnalysisResults(prev =>
-        prev.map(r => (r.id === tempId || r.timestamp === caseToRetry.timestamp) ? { ...successfulRecord, id: newId } : r)
-      );
-    } catch (err) {
-      console.error("Retry failed:", err);
-      const classifiedError = classifyError(err, rawResponseText);
-      addLogEntry('CASE_RETRY_FAILED', `Failed to re-analyze case. Original timestamp: ${caseToRetry.timestamp}. Error: ${classifiedError.title}`);
-      const errorRecord = {
-        ...caseToRetry,
-        id: caseToRetry.id,
-        originalText: textToAnalyze,
-        loading: false,
-        error: classifiedError,
-      };
-      await putCaseInDB(errorRecord);
-      setAnalysisResults(prev =>
-        prev.map(r => (r.id === tempId || r.timestamp === caseToRetry.timestamp) ? errorRecord : r)
-      );
-    }
-  };
-
-  const closeDialog = () => {
-    setDialogConfig({ isOpen: false, title: '', message: '', onConfirm: null });
-  };
-
-  const handleClearHistory = async () => {
-    setDialogConfig({
-        isOpen: true,
-        title: t('clearHistoryButton'),
-        message: t('confirmClearHistory'),
-        onConfirm: async () => {
-            try {
-                const oldLength = analysisResults.length;
-                await clearAllCasesFromDB();
-                setAnalysisResults([]);
-                addLogEntry('HISTORY_CLEARED', `All ${oldLength} case(s) were cleared from history.`);
-            } catch (err) {
-                console.error('Failed to clear history:', err);
-                setError(t('errorClearHistory'));
-            } finally {
-                closeDialog();
-            }
-        },
-    });
-  };
-
-  const handleExportHistory = async () => {
-    try {
-      const history = await getAllCasesFromDB();
-      if (history.length === 0) {
-        alert(t('alertNoHistoryToExport'));
-        return;
-      }
-  
-      const exportableHistory = history.map(({ originalText, analysis, timestamp, tags }) => ({
-        originalText,
-        analysis,
-        timestamp,
-        tags
-      }));
-  
-      const jsonString = JSON.stringify(exportableHistory, null, 2);
-      const blob = new Blob([jsonString], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      
-      const link = document.createElement("a");
-      link.href = url;
-      const date = new Date().toISOString().split('T')[0];
-      link.download = `judgment_analysis_history_${date}.json`;
-      
-      document.body.appendChild(link);
-      link.click();
-      
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Failed to export history:', err);
-      setError(t('errorExportHistory'));
-    }
-  };
-
-  const handleUpdateCase = async (updatedRecord: CaseRecord) => {
-    // Set loading to true for the specific record, keeping its current data for optimistic UI
-    setAnalysisResults(prev =>
-        prev.map(r => r.id === updatedRecord.id ? { ...updatedRecord, loading: true } : r)
-    );
-    try {
-        if (updatedRecord.id === undefined) {
-            throw new Error("Cannot update a record without an ID.");
-        }
-        await putCaseInDB(updatedRecord);
-        addLogEntry('CASE_UPDATED', `Case ID: ${updatedRecord.id} was updated.`);
-        // On success, update the record and remove loading state
-        setAnalysisResults(prev =>
-            prev.map(r => r.id === updatedRecord.id ? { ...updatedRecord, loading: false } : r)
-        );
-    } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        console.error("Failed to update case:", errorMessage);
-        setError(t('errorUpdateCase', errorMessage));
-        // On error, just remove loading state, keeping the edited content for the user to retry
-        setAnalysisResults(prev =>
-            prev.map(r => r.id === updatedRecord.id ? { ...updatedRecord, loading: false } : r)
-        );
-        throw err; // Re-throw to allow local error handling in the component
-    }
-  };
-  
-  const requestDeleteConfirmation = (idToDelete: number) => {
-    setDialogConfig({
-      isOpen: true,
-      title: t('deleteButtonLabel'),
-      message: t('confirmDeleteCase'),
-      onConfirm: async () => {
-        try {
-          await deleteCaseFromDB(idToDelete);
-          addLogEntry('CASE_DELETED', `Case ID: ${idToDelete} was deleted.`);
-          setAnalysisResults(prev => prev.filter(r => r.id !== idToDelete));
-        } catch (err) {
-          console.error('Failed to delete case:', err);
-          setError(t('errorDeleteCase'));
-        } finally {
-          closeDialog();
-        }
-      },
-    });
-  };
-
-  const handleBulkDeleteCases = async (idsToDelete: number[]) => {
-    setDialogConfig({
-        isOpen: true,
-        title: t('confirmBulkDeleteTitle'),
-        message: t('confirmBulkDeleteMessage', idsToDelete.length),
-        onConfirm: async () => {
-            try {
-                await bulkDeleteCasesFromDB(idsToDelete);
-                addLogEntry('BULK_DELETE_SUCCESS', `Successfully deleted ${idsToDelete.length} cases.`);
-                setAnalysisResults(prev => prev.filter(r => r.id === undefined || !idsToDelete.includes(r.id)));
-            } catch (err) {
-                 console.error('Failed to bulk delete cases:', err);
-                 setError(t('errorBulkDelete'));
-            } finally {
-                closeDialog();
-            }
-        },
-    });
-  };
-
-  const handleBulkUpdateCases = async (updatedRecords: Map<number, CaseRecord>) => {
-    try {
-        await bulkUpdateCasesInDB(updatedRecords);
-        addLogEntry('BULK_TAG_SUCCESS', `Successfully tagged ${updatedRecords.size} cases.`);
-        
-        setAnalysisResults(prev => prev.map(record => {
-            if (record.id !== undefined && updatedRecords.has(record.id)) {
-                return updatedRecords.get(record.id)!;
-            }
-            return record;
-        }));
-
-    } catch(err) {
-        console.error('Failed to bulk update cases:', err);
-        setError(t('errorBulkUpdate'));
-    }
-  };
-
-
-  const filteredResults = useMemo(() => {
-    if (!searchTerm.trim()) {
-      return analysisResults;
-    }
-    const lowerCaseSearchTerm = searchTerm.toLowerCase();
-    return analysisResults.filter(record => {
-      const textMatch = record.originalText.toLowerCase().includes(lowerCaseSearchTerm);
-      const analysisMatch = record.analysis ?
-        JSON.stringify(record.analysis).toLowerCase().includes(lowerCaseSearchTerm) :
-        false;
-      const tagMatch = record.tags?.some(tag => tag.toLowerCase().includes(lowerCaseSearchTerm));
-      return textMatch || analysisMatch || tagMatch;
-    });
-  }, [analysisResults, searchTerm]);
-
-  const allTags = useMemo(() => {
-    const tagsSet = new Set<string>();
-    analysisResults.forEach(record => {
-        record.tags?.forEach(tag => tagsSet.add(tag));
-    });
-    return Array.from(tagsSet).sort();
-  }, [analysisResults]);
-
-  if (view === 'admin') {
-      return (
-          <main className="container">
-              <AdminDashboard
-                  t={t}
-                  onSwitchView={() => setView('app')}
-                  allCases={analysisResults}
-                  allTags={allTags}
-                  onBulkDelete={handleBulkDeleteCases}
-                  onBulkUpdate={handleBulkUpdateCases}
-                  schema={schema}
-                  onSchemaUpdate={handleSchemaUpdate}
-              />
-              <ConfirmationDialog
-                isOpen={dialogConfig.isOpen}
-                title={dialogConfig.title}
-                message={dialogConfig.message}
-                onConfirm={() => dialogConfig.onConfirm?.()}
-                onCancel={closeDialog}
-                t={t}
-              />
-          </main>
-      );
-  }
-
-  return (
-    <main className="container">
-      <header>
-        <div className="header-top-controls">
-            <button className="admin-toggle-btn" onClick={() => setView('admin')}>{t('adminDashboardButton')}</button>
-            <div className="theme-switcher">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-                <label className="switch">
-                    <input
-                        type="checkbox"
-                        checked={theme === 'dark'}
-                        onChange={() => {
-                            const newTheme = theme === 'light' ? 'dark' : 'light';
-                            setTheme(newTheme);
-                            addLogEntry('SETTINGS_THEME_CHANGED', `Theme changed to ${newTheme}.`);
-                        }}
-                        aria-label="Toggle theme"
-                    />
-                    <span className="slider round"></span>
-                </label>
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-            </div>
-        </div>
-        <h1>{t('appTitle')}</h1>
-        <p>{t('appDescription')}</p>
-      </header>
-      
-      <div className="tabs-container" role="tablist">
-          <button className={`tab-button ${activeTab === 'input' ? 'active' : ''}`} onClick={() => setActiveTab('input')} id="analyze-tab" aria-controls="analyze-panel" aria-selected={activeTab === 'input'} role="tab">{t('analyzeTab')}</button>
-          <button className={`tab-button ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')} id="history-tab" aria-controls="history-panel" aria-selected={activeTab === 'history'} role="tab">{t('historyTab')}</button>
-          <button className={`tab-button ${activeTab === 'judicialRecords' ? 'active' : ''}`} onClick={() => setActiveTab('judicialRecords')} id="records-tab" aria-controls="records-panel" aria-selected={activeTab === 'judicialRecords'} role="tab">{t('judicialRecordsTab')}</button>
-      </div>
-
-      {activeTab === 'input' && (
-        <section className="input-section" id="analyze-panel" role="tabpanel" aria-labelledby="analyze-tab">
-          <form onSubmit={handleAnalyze}>
-            <label htmlFor="case-text">{t('caseTextLabel')}</label>
-            <textarea
-              id="case-text"
-              rows={10}
-              placeholder={t('caseTextPlaceholder')}
-              value={caseText}
-              onChange={(e) => {
-                setCaseText(e.target.value);
-                if (e.target.value.trim() && uploadedFiles) {
-                  setUploadedFiles(null);
-                  const fileInput = document.getElementById('file-upload') as HTMLInputElement;
-                  if (fileInput) fileInput.value = '';
-                }
-              }}
-              disabled={loading}
-            ></textarea>
-
-            <div className="divider">{t('orDivider')}</div>
-
-            <label
-              htmlFor="file-upload"
-              className={`drop-zone ${isDraggingOver ? 'drag-over' : ''}`}
-              onDragOver={handleDragOver}
-              onDragEnter={handleDragEnter}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-            >
-              <input
-                id="file-upload"
-                type="file"
-                multiple
-                onChange={handleFileChange}
-                accept=".json,.jsonl,.txt,.md"
-                disabled={loading}
-              />
-              {uploadedFiles && uploadedFiles.length > 0 ? (
-                <div className="file-list-display">
-                  <div className="file-list-title">{t('filesSelected', uploadedFiles.length)}</div>
-                  <ul className="file-list">
-                    {Array.from(uploadedFiles).map((file, index) => (
-                      <li key={index} className="file-list-item">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
-                        <span>{file.name}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <div className="drop-zone-content">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                  <p className="drop-zone-text">{t('dragAndDropPrompt')}</p>
-                  <span className="file-label">{t('uploadFileLabel')}</span>
-                </div>
-              )}
-            </label>
-
-            {error && <p className="error-message">{error}</p>}
-            
-            <button type="submit" disabled={loading}>
-              {loading ? t('analyzingButton') : t('analyzeButton')}
-            </button>
-            {isBatchProcessing && uploadProgress && (
-              <div className="progress-indicator">
-                  <p>
-                    {uploadProgress.step === 'parsing' 
-                        ? t('parsingFileProgress', uploadProgress.current, uploadProgress.total)
-                        : t('analyzingCasesProgress', uploadProgress.current, uploadProgress.total)
-                    }
-                  </p>
-                  <div className="progress-bar-container">
-                      <div 
-                          className="progress-bar"
-                          style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
-                      ></div>
-                  </div>
-              </div>
-            )}
-          </form>
-        </section>
-      )}
-
-      {activeTab === 'history' && (
-        <section className="output-section" id="history-panel" role="tabpanel" aria-labelledby="history-tab">
-          {dbLoading ? (
-            <div className="loader"></div>
-          ) : (
-            <>
-              <div className="results-header">
-                <h2>{t('analysisHistoryTitle')}</h2>
-                <div className="header-controls">
-                  <div className="search-input-wrapper">
-                    <input
-                      type="search"
-                      placeholder={t('filterPlaceholder')}
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      aria-label={t('filterPlaceholder')}
-                    />
-                    {searchTerm && <button onClick={() => setSearchTerm('')} className="clear-search-btn" aria-label={t('clearSearchLabel')}>&times;</button>}
-                  </div>
-                  <div className="button-group">
-                    <button onClick={handleExportHistory} className="export-history-btn" disabled={analysisResults.length === 0}>{t('exportHistoryButton')}</button>
-                    <button onClick={handleClearHistory} className="clear-history-btn" disabled={analysisResults.length === 0}>{t('clearHistoryButton')}</button>
-                  </div>
-                </div>
-              </div>
-              
-              {filteredResults.length > 0 ? (
-                <div className="results-container">
-                  {filteredResults.map((result) => (
-                    <ResultCard
-                      key={result.id || result.timestamp}
-                      record={result}
-                      onUpdate={handleUpdateCase}
-                      onDelete={requestDeleteConfirmation}
-                      onRetry={handleRetry}
-                      t={t}
-                      locale={language}
-                    />
-                  ))}
-                </div>
-              ) : (
-                searchTerm ? (
-                  <div className="placeholder">{t('noFilterResultsPlaceholder')}</div>
-                ) : (
-                  <div className="placeholder">{t('noHistoryPlaceholder')}</div>
-                )
-              )}
-            </>
-          )}
-        </section>
-      )}
-
-      {activeTab === 'judicialRecords' && (
-        <section className="output-section" id="records-panel" role="tabpanel" aria-labelledby="records-tab">
-            <LegalCaseSearchEngine t={t} />
-        </section>
-      )}
-
-      <ConfirmationDialog
-        isOpen={dialogConfig.isOpen}
-        title={dialogConfig.title}
-        message={dialogConfig.message}
-        onConfirm={() => dialogConfig.onConfirm?.()}
-        onCancel={closeDialog}
-        t={t}
-      />
-    </main>
-  );
-}
-
-// FIX: Added PlaceholderView component to resolve 'Cannot find name' error.
-const PlaceholderView = ({ title, t }: { title: string; t: TFunction }) => {
-    const dateLocale = document.documentElement.lang === 'ar' ? arLocale : enLocale;
-
-    return (
-        <div className="admin-card">
-            <div className="admin-card-header">
-                <h3>{title}</h3>
-            </div>
-            <div className="admin-card-body">
-                <p className="placeholder">{t('backendRequiredNotice')}</p>
-                {title === t('userManagementSection') && (
-                    <div className="user-management-placeholder">
-                        <button disabled className="admin-button-primary">{t('inviteUserButton')}</button>
-                        <table className="admin-table disabled-table">
-                            <thead><tr><th>{t('userLabel')}</th><th>{t('roleLabel')}</th><th>{t('lastActiveLabel')}</th><th>{t('statusLabel')}</th><th>{t('actionsLabel')}</th></tr></thead>
-                            <tbody>
-                                <tr>
-                                    <td>user@example.com</td>
-                                    <td>{t('adminLabel')}</td>
-                                    <td>{formatDistanceToNow(new Date(), { addSuffix: true, locale: dateLocale })}</td>
-                                    <td><span className="status-dot operational"></span> {t('activeLabel')}</td>
-                                    <td>...</td>
-                                </tr>
-                                <tr>
-                                    <td>analyst@example.com</td>
-                                    <td>{t('analystLabel')}</td>
-                                    <td>{formatDistanceToNow(subDays(new Date(), 3), { addSuffix: true, locale: dateLocale })}</td>
-                                    <td><span className="status-dot inactive"></span> {t('inactiveLabel')}</td>
-                                    <td>...</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-};
-
-const AdminDashboard = ({ t, onSwitchView, allCases, allTags, onBulkDelete, onBulkUpdate, schema, onSchemaUpdate }: {
-    t: TFunction;
-    onSwitchView: () => void;
-    allCases: CaseRecord[];
-    allTags: string[];
-    onBulkDelete: (ids: number[]) => void;
-    onBulkUpdate: (updates: Map<number, CaseRecord>) => void;
-    schema: EditableSchema;
-    onSchemaUpdate: (schema: EditableSchema) => Promise<void>;
-}) => {
-    const [adminSection, setAdminSection] = useState('analytics');
-
-    const sections = {
-        analytics: { label: t('analyticsSection'), icon: '📊' },
-        'case-data': { label: t('caseDataManagementSection'), icon: '🗂️' },
-        'user-management': { label: t('userManagementSection'), icon: '👥' },
-        'audit-log': { label: t('auditLogSection'), icon: '📋' },
-        'system-status': { label: t('systemStatusSection'), icon: '⚙️' },
-        'schema-settings': { label: t('schemaSettingsSection'), icon: '🧬' },
-    };
-
-    return (
-        <>
-            <header>
-                <div className="header-top-controls">
-                    <button className="admin-toggle-btn" onClick={onSwitchView}>{t('appViewButton')}</button>
-                </div>
-                <h1>{t('adminDashboardTitle')}</h1>
-            </header>
-            <div className="admin-dashboard">
-                <aside className="admin-sidebar">
-                    <nav className="admin-sidebar-nav">
-                        {Object.entries(sections).map(([key, { label, icon }]) => (
-                            <button
-                                key={key}
-                                className={adminSection === key ? 'active' : ''}
-                                onClick={() => setAdminSection(key)}
-                            >
-                                <span className="admin-nav-icon">{icon}</span> {label}
-                            </button>
-                        ))}
-                    </nav>
+                    <button onClick={resetFilters} className="secondary">{t('resetFilters')}</button>
                 </aside>
-                <main className="admin-main-content">
-                    {adminSection === 'analytics' && <AnalyticsView allCases={allCases} allTags={allTags} t={t} />}
-                    {adminSection === 'case-data' && <CaseDataManagementView allCases={allCases} t={t} onBulkDelete={onBulkDelete} onBulkUpdate={onBulkUpdate} />}
-                    {adminSection === 'user-management' && <PlaceholderView title={t('userManagementSection')} t={t} />}
-                    {adminSection === 'audit-log' && <AuditLogView t={t} />}
-                    {adminSection === 'system-status' && <SystemStatusView t={t} />}
-                    {adminSection === 'schema-settings' && <SchemaSettingsView schema={schema} onSchemaUpdate={onSchemaUpdate} t={t} />}
+                <main className="records-main-content">
+                    {isLoading ? (
+                        <div className="placeholder"><div className="spinner"></div><p>{t('fetchingCases')}</p></div>
+                    ) : filteredRecords.length > 0 ? (
+                        <ul className="records-list">
+                            {filteredRecords.map(rec => (
+                                <li className="record-card" key={rec.case_id} onClick={() => setSelectedRecord(rec)}>
+                                    <h4>{rec.title}</h4>
+                                    <div className="record-meta">
+                                        <span className="meta-item">
+                                            <span className="material-symbols-outlined">gavel</span>
+                                            {rec.judgment_number || 'N/A'}
+                                        </span>
+                                        <span className="meta-item">
+                                            <span className="material-symbols-outlined">apartment</span>
+                                            {rec.judgment_court_name || 'N/A'}
+                                        </span>
+                                        <span className="meta-item">
+                                            <span className="material-symbols-outlined">calendar_month</span>
+                                            {rec.judgment_hijri_date || 'N/A'}
+                                        </span>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <div className="placeholder"><p>{t('noRecordsFound')}</p></div>
+                    )}
                 </main>
             </div>
         </>
     );
 };
 
-const AnalyticsView = ({ allCases, allTags, t }: { allCases: CaseRecord[]; allTags: string[]; t: TFunction }) => {
-    const analytics = useMemo(() => {
-        const totalCases = allCases.length;
-        const casesWithAppeals = allCases.filter(c => c.analysis?.hasAppeal).length;
-        const analysisErrors = allCases.filter(c => c.error).length;
-        const totalUniqueTags = allTags.length;
+const AdminDashboard: React.FC<{ history: CaseRecord[], setHistory: React.Dispatch<React.SetStateAction<CaseRecord[]>>, allTags: string[], t: TFunction, dateLocale: any, customSchema: EditableSchema, setCustomSchema: React.Dispatch<React.SetStateAction<EditableSchema>>, handleSaveSchema: () => Promise<void>, isSavingSchema: boolean, schemaSaveStatus: 'success' | 'error' | null }> = ({ history, setHistory, allTags, t, dateLocale, customSchema, setCustomSchema, handleSaveSchema, isSavingSchema, schemaSaveStatus }) => {
+    const [activeAdminTab, setActiveAdminTab] = useState('analytics');
+    const [auditLogs, setAuditLogs] = useState<any[]>([]);
+    const [selectedCases, setSelectedCases] = useState<Set<number>>(new Set());
+    const [tagsToAdd, setTagsToAdd] = useState('');
+    const [isTagModalOpen, setIsTagModalOpen] = useState(false);
 
+    useEffect(() => {
+        if (activeAdminTab === 'audit') {
+            getLogEntries().then(setAuditLogs);
+        }
+    }, [activeAdminTab]);
+
+    const analyticsData = useMemo(() => {
+        const successfulAnalyses = history.filter(c => c.analysis && !c.error);
+        const totalCases = history.length;
+        const casesWithAppeals = successfulAnalyses.filter(c => c.analysis.hasAppeal).length;
+        const analysisErrors = history.filter(c => c.error).length;
+        
         const thirtyDaysAgo = startOfDay(subDays(new Date(), 30));
-        const casesByDay = allCases.reduce((acc, curr) => {
-            if (curr.timestamp >= thirtyDaysAgo.getTime()) {
-                const day = format(new Date(curr.timestamp), 'yyyy-MM-dd');
+        const casesByDay = successfulAnalyses
+            .filter(c => c.timestamp >= thirtyDaysAgo.getTime())
+            .reduce((acc, c) => {
+                const day = format(new Date(c.timestamp), 'yyyy-MM-dd');
                 acc[day] = (acc[day] || 0) + 1;
-            }
-            return acc;
-        }, {} as Record<string, number>);
+                return acc;
+            }, {} as Record<string, number>);
 
-        const dateLabels = [...Array(30)].map((_, i) => format(subDays(new Date(), i), 'MM-dd')).reverse();
-        const dailyCounts = dateLabels.map(label => {
-            const date = new Date();
-            const [month, day] = label.split('-');
-            date.setMonth(parseInt(month) - 1, parseInt(day));
+        const labels = Array.from({ length: 30 }, (_, i) => format(subDays(new Date(), i), 'MMM d')).reverse();
+        const data = labels.map(label => {
+            const date = new Date(label + ', ' + new Date().getFullYear()); // a bit of a hack to get the right date
             const formattedDate = format(date, 'yyyy-MM-dd');
             return casesByDay[formattedDate] || 0;
         });
@@ -2952,155 +1632,132 @@ const AnalyticsView = ({ allCases, allTags, t }: { allCases: CaseRecord[]; allTa
             totalCases,
             casesWithAppeals,
             analysisErrors,
-            totalUniqueTags,
-            chartData: {
-                labels: dateLabels,
-                datasets: [{
-                    label: t('casesAnalyzedLast30Days'),
-                    data: dailyCounts,
-                    backgroundColor: 'rgba(74, 144, 226, 0.6)',
-                    borderColor: 'rgba(74, 144, 226, 1)',
-                    borderWidth: 1,
-                }]
-            },
-            doughnutData: {
+            casesAnalyzedLast30Days: { labels, data },
+            casesByAppealStatus: {
                 labels: [t('withAppeal'), t('withoutAppeal')],
-                datasets: [{
-                    data: [casesWithAppeals, totalCases - casesWithAppeals],
-                    backgroundColor: ['rgba(74, 144, 226, 0.8)', 'rgba(224, 224, 224, 0.8)'],
-                    borderColor: ['rgba(74, 144, 226, 1)', 'rgba(200, 200, 200, 1)'],
-                    borderWidth: 1,
-                }]
+                data: [casesWithAppeals, successfulAnalyses.length - casesWithAppeals],
             }
         };
-    }, [allCases, allTags, t]);
-
-    return (
-        <div className="analytics-view">
-            <header className="admin-header">
-                <h2>{t('analyticsSection')}</h2>
-            </header>
-            <div className="stat-cards-grid">
-                <div className="stat-card"><h4>{t('totalCasesAnalyzed')}</h4><p>{analytics.totalCases}</p></div>
-                <div className="stat-card"><h4>{t('casesWithAppeals')}</h4><p>{analytics.casesWithAppeals}</p></div>
-                <div className="stat-card"><h4>{t('analysisErrors')}</h4><p>{analytics.analysisErrors}</p></div>
-                <div className="stat-card"><h4>{t('totalUniqueTags')}</h4><p>{analytics.totalUniqueTags}</p></div>
-            </div>
-            <div className="charts-grid">
-                <div className="admin-card">
-                    <div className="admin-card-body chart-container">
-                        <h3>{t('casesAnalyzedLast30Days')}</h3>
-                        <Bar data={analytics.chartData} options={{ responsive: true, maintainAspectRatio: false }} />
-                    </div>
-                </div>
-                <div className="admin-card">
-                    <div className="admin-card-body chart-container">
-                        <h3>{t('casesByAppealStatus')}</h3>
-                        <Doughnut data={analytics.doughnutData} options={{ responsive: true, maintainAspectRatio: false }} />
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const CaseDataManagementView = ({ allCases, t, onBulkDelete, onBulkUpdate }: {
-    allCases: CaseRecord[],
-    t: TFunction,
-    onBulkDelete: (ids: number[]) => void,
-    onBulkUpdate: (updates: Map<number, CaseRecord>) => void,
-}) => {
-    const [filter, setFilter] = useState('');
-    const [selectedCases, setSelectedCases] = useState<Set<number>>(new Set());
-    const [isAddTagsModalOpen, setIsAddTagsModalOpen] = useState(false);
-    const [tagsToAdd, setTagsToAdd] = useState('');
+    }, [history, t]);
     
-    const filteredCases = useMemo(() => {
-        const lowerFilter = filter.toLowerCase();
-        if (!lowerFilter) return allCases;
-        return allCases.filter(c =>
-            (c.analysis?.title || '').toLowerCase().includes(lowerFilter) ||
-            (c.analysis?.judgmentNumber || '').toLowerCase().includes(lowerFilter) ||
-            c.originalText.toLowerCase().includes(lowerFilter) ||
-            c.tags?.some(tag => tag.toLowerCase().includes(lowerFilter))
-        );
-    }, [allCases, filter]);
-
     const handleSelectCase = (id: number) => {
-        setSelectedCases(prev => {
-            const newSet = new Set(prev);
-            if (newSet.has(id)) {
-                newSet.delete(id);
-            } else {
-                newSet.add(id);
-            }
-            return newSet;
-        });
+        const newSelection = new Set(selectedCases);
+        if (newSelection.has(id)) {
+            newSelection.delete(id);
+        } else {
+            newSelection.add(id);
+        }
+        setSelectedCases(newSelection);
     };
-
+    
     const handleSelectAll = (e: ChangeEvent<HTMLInputElement>) => {
         if (e.target.checked) {
-            setSelectedCases(new Set(filteredCases.map(c => c.id!).filter(id => id !== undefined)));
+            const allIds = history.map(c => c.id!).filter(Boolean);
+            setSelectedCases(new Set(allIds));
         } else {
             setSelectedCases(new Set());
         }
     };
 
-    const handleOpenAddTagsModal = () => {
-        setTagsToAdd('');
-        setIsAddTagsModalOpen(true);
+    const handleBulkDelete = async () => {
+        if (selectedCases.size === 0) return;
+        if (confirm(t('confirmBulkDeleteMessage', selectedCases.size))) {
+            try {
+                const idsToDelete = Array.from(selectedCases);
+                await bulkDeleteCasesFromDB(idsToDelete);
+                setHistory(prev => prev.filter(c => c.id && !selectedCases.has(c.id)));
+                setSelectedCases(new Set());
+            } catch (err) {
+                alert(t('errorBulkDelete'));
+                console.error(err);
+            }
+        }
     };
-
-    const handleAddTagsToSelected = () => {
+    
+    const handleBulkAddTags = async () => {
+        if (selectedCases.size === 0 || !tagsToAdd.trim()) return;
         const tags = tagsToAdd.split(',').map(t => t.trim()).filter(Boolean);
         if (tags.length === 0) return;
 
-        const updatedRecords = new Map<number, CaseRecord>();
-        selectedCases.forEach(id => {
-            const originalRecord = allCases.find(c => c.id === id);
-            if (originalRecord) {
-                const newTags = new Set([...(originalRecord.tags || []), ...tags]);
-                updatedRecords.set(id, { ...originalRecord, tags: Array.from(newTags) });
+        const updates = new Map<number, CaseRecord>();
+        history.forEach(rec => {
+            if (rec.id && selectedCases.has(rec.id)) {
+                const newTags = new Set([...(rec.tags || []), ...tags]);
+                updates.set(rec.id, { ...rec, tags: Array.from(newTags) });
             }
         });
         
-        onBulkUpdate(updatedRecords);
-        setIsAddTagsModalOpen(false);
-        setSelectedCases(new Set());
+        try {
+            await bulkUpdateCasesInDB(updates);
+            setHistory(prev => prev.map(rec => rec.id && updates.has(rec.id) ? updates.get(rec.id)! : rec));
+            setIsTagModalOpen(false);
+            setTagsToAdd('');
+            setSelectedCases(new Set());
+        } catch (err) {
+            alert(t('errorBulkUpdate'));
+            console.error(err);
+        }
+    };
+    
+    const handleSchemaFieldChange = (index: number, field: keyof EditableSchemaField, value: any) => {
+        const newSchema = [...customSchema];
+        (newSchema[index] as any)[field] = value;
+        setCustomSchema(newSchema);
     };
 
+    const addSchemaField = () => {
+        setCustomSchema([...customSchema, { name: '', type: Type.STRING, description: '', isPrimaryKey: false, nullable: true }]);
+    };
+    
+    const removeSchemaField = (index: number) => {
+        setCustomSchema(customSchema.filter((_, i) => i !== index));
+    };
+
+
     return (
-        <>
-            <div className="admin-card">
-                <div className="admin-card-header">
-                    <h3>{t('caseDataManagementSection')} ({filteredCases.length})</h3>
-                    {selectedCases.size > 0 ? (
-                        <div className="bulk-actions-toolbar">
+        <section className="admin-dashboard">
+            <h2>{t('adminDashboardTitle')}</h2>
+            <div className="admin-tabs">
+                <button className={activeAdminTab === 'analytics' ? 'active' : ''} onClick={() => setActiveAdminTab('analytics')}>{t('analyticsSection')}</button>
+                <button className={activeAdminTab === 'data' ? 'active' : ''} onClick={() => setActiveAdminTab('data')}>{t('caseDataManagementSection')}</button>
+                <button className={activeAdminTab === 'schema' ? 'active' : ''} onClick={() => setActiveAdminTab('schema')}>{t('schemaSettingsSection')}</button>
+                <button className={activeAdminTab === 'audit' ? 'active' : ''} onClick={() => setActiveAdminTab('audit')}>{t('auditLogSection')}</button>
+                <button className={activeAdminTab === 'status' ? 'active' : ''} onClick={() => setActiveAdminTab('status')}>{t('systemStatusSection')}</button>
+            </div>
+            <div className="admin-content">
+                {activeAdminTab === 'analytics' && (
+                    <div className="analytics-section">
+                       <div className="stat-cards-grid">
+                           <div className="stat-card"><h4>{t('totalCasesAnalyzed')}</h4><p>{analyticsData.totalCases}</p></div>
+                           <div className="stat-card"><h4>{t('casesWithAppeals')}</h4><p>{analyticsData.casesWithAppeals}</p></div>
+                           <div className="stat-card"><h4>{t('analysisErrors')}</h4><p>{analyticsData.analysisErrors}</p></div>
+                           <div className="stat-card"><h4>{t('totalUniqueTags')}</h4><p>{allTags.length}</p></div>
+                       </div>
+                       <div className="charts-grid">
+                           <div className="chart-wrapper">
+                               <h3>{t('casesAnalyzedLast30Days')}</h3>
+                               <Bar data={{ labels: analyticsData.casesAnalyzedLast30Days.labels, datasets: [{ label: t('casesAnalyzedLast30Days'), data: analyticsData.casesAnalyzedLast30Days.data, backgroundColor: 'rgba(54, 162, 235, 0.6)' }] }} options={{ responsive: true, plugins: { legend: { display: false } } }} />
+                           </div>
+                            <div className="chart-wrapper">
+                               <h3>{t('casesByAppealStatus')}</h3>
+                               <Doughnut data={{ labels: analyticsData.casesByAppealStatus.labels, datasets: [{ data: analyticsData.casesByAppealStatus.data, backgroundColor: ['rgba(75, 192, 192, 0.6)', 'rgba(255, 159, 64, 0.6)'] }] }} options={{ responsive: true }} />
+                           </div>
+                       </div>
+                    </div>
+                )}
+                {activeAdminTab === 'data' && (
+                    <div className="data-management-section">
+                        <div className="bulk-actions">
                             <span>{t('casesSelected', selectedCases.size)}</span>
-                            <div>
-                                <button onClick={handleOpenAddTagsModal} className="admin-button-secondary">{t('addTagsButtonLabel')}</button>
-                                <button onClick={() => onBulkDelete(Array.from(selectedCases))} className="admin-button-danger">{t('deleteSelectedButtonLabel')}</button>
-                            </div>
+                            <button onClick={() => setIsTagModalOpen(true)} disabled={selectedCases.size === 0}>{t('addTagsButtonLabel')}</button>
+                            <button onClick={handleBulkDelete} className="danger" disabled={selectedCases.size === 0}>{t('deleteSelectedButtonLabel')}</button>
                         </div>
-                    ) : (
-                        <input
-                            type="search"
-                            className="admin-table-filter"
-                            placeholder={t('filterCasesPlaceholder')}
-                            value={filter}
-                            onChange={e => setFilter(e.target.value)}
-                        />
-                    )}
-                </div>
-                <div className="admin-card-body--no-padding">
-                    <div className="admin-table-container">
                         <table className="admin-table">
                             <thead>
                                 <tr>
-                                    <th className="checkbox-cell">
-                                        <input type="checkbox" onChange={handleSelectAll} title={t('selectAllLabel')} checked={selectedCases.size > 0 && selectedCases.size === filteredCases.filter(c=>c.id).length} />
-                                    </th>
+                                    <th><input type="checkbox" onChange={handleSelectAll} checked={selectedCases.size === history.length && history.length > 0} aria-label={t('selectAllLabel')} /></th>
                                     <th>{t('titleLabel')}</th>
+                                    <th>{t('judgmentNumberLabel')}</th>
                                     <th>{t('dateCreatedLabel')}</th>
                                     <th>{t('tagsCountLabel')}</th>
                                     <th>{t('hasAppealLabel')}</th>
@@ -3108,232 +1765,736 @@ const CaseDataManagementView = ({ allCases, t, onBulkDelete, onBulkUpdate }: {
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredCases.map(c => (
-                                    <tr key={c.id || c.timestamp} className={c.id !== undefined && selectedCases.has(c.id) ? 'selected' : ''}>
-                                        <td className="checkbox-cell">
-                                            {c.id !== undefined && <input type="checkbox" checked={selectedCases.has(c.id)} onChange={() => handleSelectCase(c.id!)} />}
-                                        </td>
-                                        <td>{c.analysis?.title || c.analysis?.judgmentNumber || `ID: ${c.id}`}</td>
-                                        <td>{format(new Date(c.timestamp), 'yyyy-MM-dd HH:mm')}</td>
-                                        <td><span className="code-pill">{c.tags?.length || 0}</span></td>
-                                        <td>{c.analysis?.hasAppeal ? '✅' : '❌'}</td>
-                                        <td>{c.error ? <span className="status-dot error"></span> : <span className="status-dot operational"></span>} {c.error ? t('errorLabel') : t('operationalLabel')}</td>
+                                {history.map(c => (
+                                    <tr key={c.id}>
+                                        <td><input type="checkbox" checked={selectedCases.has(c.id!)} onChange={() => handleSelectCase(c.id!)} /></td>
+                                        <td>{c.analysis?.title || 'N/A'}</td>
+                                        <td>{c.analysis?.judgmentNumber || 'N/A'}</td>
+                                        <td>{format(new Date(c.timestamp), 'PPpp', { locale: dateLocale })}</td>
+                                        <td>{c.tags?.length || 0}</td>
+                                        <td>{c.analysis ? (c.analysis.hasAppeal ? t('withAppeal') : t('withoutAppeal')) : 'N/A'}</td>
+                                        <td>{c.error ? <span className="status-error">{t('errorLabel')}</span> : <span className="status-ok">{t('activeLabel')}</span>}</td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
+                        {isTagModalOpen && (
+                            <div className="modal-overlay">
+                                <div className="modal">
+                                    <h3>{t('addTagsToSelectedTitle')}</h3>
+                                    <input type="text" value={tagsToAdd} onChange={e => setTagsToAdd(e.target.value)} placeholder={t('tagsToAddPlaceholder')} />
+                                    <div className="modal-actions">
+                                        <button onClick={handleBulkAddTags} className="primary">{t('addTagsButtonLabel')}</button>
+                                        <button onClick={() => setIsTagModalOpen(false)}>{t('cancelButtonLabel')}</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
-                </div>
-            </div>
-            {isAddTagsModalOpen && (
-                 <div className="modal-overlay">
-                    <div className="modal-content">
-                        <h3>{t('addTagsToSelectedTitle')}</h3>
-                        <div className="form-group">
-                            <label htmlFor="tags-to-add">{t('tagsLabel')}</label>
-                            <input
-                                id="tags-to-add"
-                                type="text"
-                                value={tagsToAdd}
-                                onChange={e => setTagsToAdd(e.target.value)}
-                                placeholder={t('tagsToAddPlaceholder')}
-                            />
-                        </div>
-                        <div className="modal-actions">
-                            <button className="dialog-cancel-btn" onClick={() => setIsAddTagsModalOpen(false)}>{t('cancelButtonLabel')}</button>
-                            <button className="dialog-confirm-btn" style={{backgroundColor: 'var(--primary-color)'}} onClick={handleAddTagsToSelected}>{t('addTagsButtonLabel')}</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </>
-    );
-};
-
-const AuditLogView = ({ t }: { t: TFunction }) => {
-    const [logs, setLogs] = useState<any[]>([]);
-    useEffect(() => {
-        getLogEntries().then(setLogs);
-    }, []);
-
-    return (
-        <div className="admin-card">
-            <div className="admin-card-header"><h3>{t('auditLogSection')}</h3></div>
-            <div className="admin-card-body--no-padding">
-                <div className="admin-table-container">
-                    <table className="admin-table">
-                        <thead><tr><th>{t('actionLabel')}</th><th>{t('detailsLabel')}</th><th>{t('timestampLabel')}</th></tr></thead>
-                        <tbody>
-                            {logs.map(log => (
-                                <tr key={log.id}>
-                                    <td><span className="code-pill">{log.action}</span></td>
-                                    <td>{log.details}</td>
-                                    <td>{format(new Date(log.timestamp), 'yyyy-MM-dd HH:mm:ss')}</td>
-                                </tr>
+                )}
+                {activeAdminTab === 'schema' && (
+                    <div className="schema-settings-section">
+                        <p>{t('schemaDescription')}</p>
+                        <div className="schema-editor">
+                            <div className="schema-header">
+                                <div className="field-name">{t('fieldNameLabel')}</div>
+                                <div className="field-type">{t('fieldTypeLabel')}</div>
+                                <div className="field-desc">{t('descriptionLabel')}</div>
+                                <div className="field-pk">{t('primaryKeyLabel')}</div>
+                                <div className="field-nullable">{t('nullableLabel')}</div>
+                                <div className="field-action"></div>
+                            </div>
+                            {customSchema.map((field, index) => (
+                                <div className="schema-row" key={index}>
+                                    <input type="text" value={field.name} onChange={(e) => handleSchemaFieldChange(index, 'name', e.target.value)} />
+                                    <select value={field.type} onChange={(e) => handleSchemaFieldChange(index, 'type', e.target.value as Type)}>
+                                        {Object.values(Type).map(t => <option key={t} value={t}>{t}</option>)}
+                                    </select>
+                                    <input type="text" value={field.description} onChange={(e) => handleSchemaFieldChange(index, 'description', e.target.value)} />
+                                    <input type="checkbox" checked={field.isPrimaryKey} onChange={(e) => handleSchemaFieldChange(index, 'isPrimaryKey', e.target.checked)} />
+                                    <input type="checkbox" checked={field.nullable} onChange={(e) => handleSchemaFieldChange(index, 'nullable', e.target.checked)} />
+                                    <button onClick={() => removeSchemaField(index)} className="admin-button-icon"><span className="material-symbols-outlined">delete</span></button>
+                                </div>
                             ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const SystemStatusView = ({ t }: { t: TFunction }) => {
-    const [apiStatus, setApiStatus] = useState<'operational' | 'checking'>('operational');
-    const [dbStatus] = useState<'operational'>('operational');
-
-    const handleRecheck = () => {
-        setApiStatus('checking');
-        setTimeout(() => setApiStatus('operational'), 1500);
-    };
-
-    const StatusIndicator = ({ status, text }: { status: string, text: string }) => (
-        <div className="status-indicator">
-            <span className={`status-dot ${status}`}></span>
-            <span>{text}</span>
-        </div>
-    );
-
-    return (
-        <div className="admin-card">
-            <div className="admin-card-header">
-                <h3>{t('systemStatusSection')}</h3>
-                <button className="admin-button-secondary" onClick={handleRecheck} disabled={apiStatus === 'checking'}>{t('recheckStatusButton')}</button>
-            </div>
-            <div className="admin-card-body">
-                <ul className="status-list">
-                    <li className="status-list-item">
-                        <span>{t('geminiApiLabel')}</span>
-                        {/* FIX: Cast dynamic template literal to TranslationKey to resolve TypeScript error. */}
-                        <StatusIndicator status={apiStatus} text={t(`${apiStatus}Label` as TranslationKey)} />
-                    </li>
-                    <li className="status-list-item">
-                        <span>{t('localDatabaseLabel')}</span>
-                        <StatusIndicator status={dbStatus} text={t(`${dbStatus}Label` as TranslationKey)} />
-                    </li>
-                </ul>
-            </div>
-        </div>
-    );
-};
-
-const SchemaSettingsView = ({ schema: initialSchema, onSchemaUpdate, t }: {
-    schema: EditableSchema,
-    onSchemaUpdate: (schema: EditableSchema) => Promise<void>,
-    t: TFunction
-}) => {
-    const [schema, setSchema] = useState(initialSchema);
-    const [isSaving, setIsSaving] = useState(false);
-    const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
-
-    const handleFieldChange = (index: number, field: keyof EditableSchemaField, value: any) => {
-        const newSchema = [...schema];
-        (newSchema[index] as any)[field] = value;
-        setSchema(newSchema);
-    };
-
-    const addField = () => {
-        setSchema([...schema, { name: '', type: Type.STRING, description: '', isPrimaryKey: false, nullable: true }]);
-    };
-
-    const removeField = (index: number) => {
-        setSchema(schema.filter((_, i) => i !== index));
-    };
-
-    const handleSave = async () => {
-        setIsSaving(true);
-        setSaveStatus(null);
-        try {
-            await onSchemaUpdate(schema.filter(f => f.name.trim() !== ''));
-            setSaveStatus({ type: 'success', message: t('schemaSavedSuccess') });
-        } catch (err) {
-            // FIX: Added the 'message' property to the state update to match the type definition.
-            setSaveStatus({ type: 'error', message: t('errorSavingSchema') });
-        } finally {
-            setIsSaving(false);
-        }
-    };
-    // FIX: Added a return statement to render the component's JSX.
-    return (
-        <div className="admin-card">
-            <div className="admin-card-header">
-                <h3>{t('schemaSettingsSection')}</h3>
-            </div>
-            <div className="admin-card-body">
-                <p className="schema-description">{t('schemaDescription')}</p>
-                <div className="schema-editor-container">
-                    <div className="schema-editor-header">
-                        <div className="schema-header-item field-name">{t('fieldNameLabel')}</div>
-                        <div className="schema-header-item field-type">{t('fieldTypeLabel')}</div>
-                        <div className="schema-header-item field-description">{t('descriptionLabel')}</div>
-                        <div className="schema-header-item field-pk">{t('primaryKeyLabel')}</div>
-                        <div className="schema-header-item field-nullable">{t('nullableLabel')}</div>
-                        <div className="schema-header-item field-actions"></div>
-                    </div>
-                    {schema.map((field, index) => (
-                        <div key={index} className="schema-editor-row">
-                            <input
-                                type="text"
-                                value={field.name}
-                                onChange={(e) => handleFieldChange(index, 'name', e.target.value)}
-                                placeholder={t('fieldNameLabel')}
-                                className="field-name"
-                            />
-                            <select
-                                value={field.type}
-                                onChange={(e) => handleFieldChange(index, 'type', e.target.value as Type)}
-                                className="field-type"
-                            >
-                                {Object.values(Type).filter(v => v !== Type.TYPE_UNSPECIFIED).map(typeValue => (
-                                    <option key={typeValue} value={typeValue}>{typeValue}</option>
-                                ))}
-                            </select>
-                            <input
-                                type="text"
-                                value={field.description}
-                                onChange={(e) => handleFieldChange(index, 'description', e.target.value)}
-                                placeholder={t('descriptionLabel')}
-                                className="field-description"
-                            />
-                            <input
-                                type="checkbox"
-                                checked={field.isPrimaryKey}
-                                onChange={(e) => handleFieldChange(index, 'isPrimaryKey', e.target.checked)}
-                                className="field-pk"
-                                title={t('primaryKeyLabel')}
-                            />
-                            <input
-                                type="checkbox"
-                                checked={field.nullable}
-                                onChange={(e) => handleFieldChange(index, 'nullable', e.target.checked)}
-                                className="field-nullable"
-                                title={t('nullableLabel')}
-                            />
-                            <button onClick={() => removeField(index)} className="admin-button-icon" title={t('deleteButtonLabel')}>&times;</button>
                         </div>
-                    ))}
-                </div>
-                <div className="schema-editor-controls">
-                    <button onClick={addField} className="admin-button-secondary">{t('addFieldButton')}</button>
-                    <div className="save-controls">
-                        {saveStatus && <span className={`save-status ${saveStatus.type}`}>{saveStatus.message}</span>}
-                        <button onClick={handleSave} disabled={isSaving} className="admin-button-primary">
-                            {isSaving ? t('savingSchemaButton') : t('saveSchemaButton')}
-                        </button>
+                        <div className="schema-actions">
+                            <button onClick={addSchemaField}>{t('addFieldButton')}</button>
+                            <button onClick={handleSaveSchema} className="primary" disabled={isSavingSchema}>
+                                {isSavingSchema ? t('savingSchemaButton') : t('saveSchemaButton')}
+                            </button>
+                             {schemaSaveStatus === 'success' && <span className="status-ok">{t('schemaSavedSuccess')}</span>}
+                             {schemaSaveStatus === 'error' && <span className="status-error">{t('errorSavingSchema')}</span>}
+                        </div>
                     </div>
-                </div>
+                )}
+                 {activeAdminTab === 'audit' && (
+                     <div className="audit-log-section">
+                         <table className="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>{t('logIdLabel')}</th>
+                                    <th>{t('actionLabel')}</th>
+                                    <th>{t('detailsLabel')}</th>
+                                    <th>{t('timestampLabel')}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {auditLogs.map(log => (
+                                    <tr key={log.id}>
+                                        <td>{log.id}</td>
+                                        <td>{log.action}</td>
+                                        <td>{log.details}</td>
+                                        <td>{format(new Date(log.timestamp), 'PPpp', { locale: dateLocale })}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                         </table>
+                    </div>
+                 )}
+                 {activeAdminTab === 'status' && (
+                     <div className="system-status-section">
+                         <div className="status-item">
+                             <h4>{t('geminiApiLabel')}</h4>
+                             <p className="status-ok">{t('operationalLabel')}</p>
+                         </div>
+                         <div className="status-item">
+                             <h4>{t('localDatabaseLabel')}</h4>
+                             <p className="status-ok">{t('operationalLabel')}</p>
+                         </div>
+                         <div className="status-item">
+                             <h4>{t('apiKeyManagedByEnv')}</h4>
+                             <p className="status-info">OK</p>
+                         </div>
+                    </div>
+                 )}
             </div>
-        </div>
+        </section>
     );
 };
 
+const App: React.FC = () => {
+  const [caseText, setCaseText] = useState<string>('');
+  const [history, setHistory] = useState<CaseRecord[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [filter, setFilter] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'analyze' | 'history' | 'records' | 'admin'>('analyze');
+  const [files, setFiles] = useState<FileList | null>(null);
+  const [isProcessingFiles, setIsProcessingFiles] = useState<boolean>(false);
+  const [processingProgress, setProcessingProgress] = useState<{ current: number, total: number }>({ current: 0, total: 0 });
 
-const root = ReactDOM.createRoot(
-  document.getElementById('root') as HTMLElement
-);
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+  const [lang, setLang] = useState<'en' | 'ar'>('en');
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+
+  const [isAdminView, setIsAdminView] = useState(false);
+
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+  
+  const [customSchema, setCustomSchema] = useState<EditableSchema>([]);
+  const [isSavingSchema, setIsSavingSchema] = useState(false);
+  const [schemaSaveStatus, setSchemaSaveStatus] = useState<'success' | 'error' | null>(null);
+
+  const [judicialRecords, setJudicialRecords] = useState<any[]>([]);
+  const [isFetchingRecords, setIsFetchingRecords] = useState(false);
+  const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
+  const [isJudicialDataLoaded, setIsJudicialDataLoaded] = useState(false);
+
+  // Drag and Drop state
+  const [isDragging, setIsDragging] = useState(false);
+
+  const dropZoneRef = useRef<HTMLLabelElement>(null);
+
+
+  useEffect(() => {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    if (currentTheme === 'dark' || currentTheme === 'light') {
+      setTheme(currentTheme);
+    } else {
+       // Default to light if no theme or an invalid theme is set
+       const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+       setTheme(prefersDark ? 'dark' : 'light');
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+  }, [theme, lang]);
+
+  const toggleTheme = () => {
+    setTheme(prevTheme => {
+        const newTheme = prevTheme === 'light' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', newTheme);
+        return newTheme;
+    });
+  };
+
+  const { t, dateLocale } = useMemo(() => {
+    const locale = translations[lang];
+    const dateLocale = lang === 'ar' ? arLocale : enLocale;
+    const tFunction = (key: TranslationKey, ...args: any[]): string => {
+      const translation = locale[key];
+      if (typeof translation === 'function') {
+        return (translation as (...args: any[]) => string)(...args);
+      }
+      return translation || (key as string);
+    };
+    return { t: tFunction, dateLocale };
+  }, [lang]);
+  
+  const handleDragEnter = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only set isDragging to false if the leave event is for the drop zone itself, not its children
+    if (e.target === dropZoneRef.current) {
+        setIsDragging(false);
+    }
+  }, []);
+  
+  const handleDragOver = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+        const droppedFiles = e.dataTransfer.files;
+        // Filter files based on extension
+        const allowedTypes = ['application/json', 'text/plain', 'text/markdown'];
+        const allowedExtensions = ['.json', '.jsonl', '.txt', '.md'];
+        
+        const validFiles = Array.from(droppedFiles).filter(file => 
+            allowedTypes.includes(file.type) || allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
+        );
+
+        if (validFiles.length > 0) {
+            // Create a new FileList
+            const dataTransfer = new DataTransfer();
+            validFiles.forEach(file => dataTransfer.items.add(file));
+            setFiles(dataTransfer.files);
+            setCaseText(''); // Clear text area
+        } else {
+            alert(t('errorInvalidFile'));
+        }
+    }
+  }, [t]);
+
+  useEffect(() => {
+    const dropZone = dropZoneRef.current;
+    if (dropZone) {
+      // Use 'dragenter' and 'dragleave' on the window to detect dragging over the page
+      const handleWindowDragEnter = (e: DragEvent) => {
+        // Check if files are being dragged
+        if (e.dataTransfer && e.dataTransfer.types.includes('Files')) {
+          // This check is important, otherwise it might trigger for text drags, etc.
+          // No visual change needed here, we just need to know files are being dragged
+        }
+      };
+
+      // When dragging enters the dropzone specifically
+      const handleZoneDragEnter = (e: DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.dataTransfer && e.dataTransfer.types.includes('Files')) {
+          setIsDragging(true);
+        }
+      };
+
+      // When dragging leaves the dropzone
+      const handleZoneDragLeave = (e: DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // A timeout helps prevent flickering when moving over child elements
+        setTimeout(() => {
+          if (dropZone && !dropZone.contains(e.relatedTarget as Node)) {
+            setIsDragging(false);
+          }
+        }, 50);
+      };
+      
+      const handleZoneDrop = (e: DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+        if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+            handleDrop(e);
+        }
+      };
+
+
+      // Attach events
+      dropZone.addEventListener('dragenter', handleZoneDragEnter);
+      dropZone.addEventListener('dragleave', handleZoneDragLeave);
+      dropZone.addEventListener('dragover', handleDragOver);
+      dropZone.addEventListener('drop', handleZoneDrop);
+      
+      return () => {
+        // Cleanup events
+        dropZone.removeEventListener('dragenter', handleZoneDragEnter);
+        dropZone.removeEventListener('dragleave', handleZoneDragLeave);
+        dropZone.removeEventListener('dragover', handleDragOver);
+        dropZone.removeEventListener('drop', handleZoneDrop);
+      };
+    }
+  }, [handleDrop, handleDragOver]);
+
+
+  useEffect(() => {
+    const loadSchema = () => {
+      const loadedSchema = getCustomSchemaFromLocalStorage();
+      setCustomSchema(loadedSchema || DEFAULT_EDITABLE_SCHEMA);
+    };
+    loadSchema();
+  }, []);
+
+  const handleSaveSchema = async () => {
+      setIsSavingSchema(true);
+      setSchemaSaveStatus(null);
+      try {
+          // Basic validation: ensure no empty field names
+          if (customSchema.some(field => field.name.trim() === '')) {
+              throw new Error("Field names cannot be empty.");
+          }
+          saveCustomSchemaToLocalStorage(customSchema);
+          await addLogEntry('SCHEMA_UPDATED', `Schema updated by admin.`);
+          setSchemaSaveStatus('success');
+      } catch (error) {
+          console.error(t('errorSavingSchema'), error);
+          setSchemaSaveStatus('error');
+      } finally {
+          setIsSavingSchema(false);
+          setTimeout(() => setSchemaSaveStatus(null), 3000);
+      }
+  };
+
+
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const cases = await getAllCasesFromDB();
+        setHistory(cases);
+        const tags = new Set<string>();
+        cases.forEach(c => {
+          c.tags?.forEach(tag => tags.add(tag));
+        });
+        setAllTags(Array.from(tags).sort());
+      } catch (error) {
+        console.error(t('errorLoadHistory'), error);
+        alert(t('errorLoadHistory'));
+      }
+    };
+    if(activeTab === 'history' || activeTab === 'admin') {
+      loadHistory();
+    }
+  }, [activeTab, t]);
+
+  const getGeminiSchema = useMemo(() => {
+      return convertEditableSchemaToGemini(customSchema);
+  }, [customSchema]);
+
+  const analyzeCase = async (text: string, sourceName: string): Promise<CaseRecord> => {
+    const placeholderRecord: CaseRecord = {
+        originalText: text,
+        timestamp: Date.now(),
+        loading: true,
+        tags: []
+    };
+
+    // Add placeholder to history immediately for better UX
+    setHistory(prev => [placeholderRecord, ...prev]);
+
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+        const prompt = `Analyze the following legal case text in its original Arabic language from Saudi Arabia and extract the specified information in JSON format according to the provided schema. For any fields that expect long-form text (like facts, reasons, rulings), use simple markdown for formatting: use '**text**' for bolding, '*text*' for italics, '~~text~~' for strikethrough, start lines with '* ' for bullet points, '1. ' for numbered lists, and use Markdown tables for tabular data. If a field is not present in the text, use null for its value. Here is the case text: \n\n${text}`;
+        
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-pro', 
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: getGeminiSchema,
+          },
+        });
+
+        const analysis = JSON.parse(response.text);
+
+        const newRecord: CaseRecord = {
+            ...placeholderRecord,
+            analysis,
+            loading: false,
+        };
+
+        const newId = await putCaseInDB(newRecord);
+        await addLogEntry('CASE_ANALYZED', `Analyzed case from ${sourceName}. New Case ID: ${newId}`);
+        
+        return { ...newRecord, id: newId };
+
+    } catch (error) {
+        console.error(t('errorFailedAnalysis'), error);
+        const classifiedError = classifyGeminiError(error, t);
+        
+        const errorRecord: CaseRecord = {
+            ...placeholderRecord,
+            loading: false,
+            error: classifiedError,
+        };
+
+        const errorId = await putCaseInDB(errorRecord);
+        await addLogEntry('ANALYSIS_FAILED', `Failed to analyze case from ${sourceName}. Error: ${(error as Error).message}`);
+        
+        return { ...errorRecord, id: errorId };
+    }
+  };
+
+  const handleAddCases = async (source: 'paste' | 'upload', files?: FileList | null) => {
+    let casesToProcess: { text: string, source: string }[] = [];
+    setIsLoading(true);
+
+    try {
+      if (source === 'upload' && files) {
+        setIsProcessingFiles(true);
+        setProcessingProgress({ current: 0, total: files.length });
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          setProcessingProgress({ current: i + 1, total: files.length });
+          try {
+            const parsedCases = await parseFile(file, t);
+            parsedCases.forEach((caseText, idx) => {
+              casesToProcess.push({ text: caseText, source: `${file.name} #${idx + 1}` });
+            });
+          } catch (uploadError) {
+             if (uploadError instanceof Error) {
+                alert(`${t('errorUploadFailedMessage', file.name)}: ${uploadError.message}`);
+             } else {
+                alert(`${t('errorUploadFailedMessage', file.name)}: ${String(uploadError)}`);
+             }
+             console.error(t('errorUploadFailedMessage', file.name), uploadError);
+          }
+        }
+        setIsProcessingFiles(false);
+      } else if (source === 'paste' && caseText.trim()) {
+        const pastedCases = caseText.split(/\n---\n|\n\n\n+/).map(c => c.trim()).filter(Boolean);
+        pastedCases.forEach((caseText, idx) => {
+          casesToProcess.push({ text: caseText, source: t('caseTextBatchSource', idx + 1) });
+        });
+      } else {
+        alert(t('errorPasteOrUpload'));
+        setIsLoading(false);
+        return;
+      }
+
+      if (casesToProcess.length === 0) {
+        setIsLoading(false);
+        return; 
+      }
+      
+      setProcessingProgress({ current: 0, total: casesToProcess.length });
+
+      const newRecords: CaseRecord[] = [];
+      const placeholderRecords: CaseRecord[] = casesToProcess.map((c, i) => ({
+          originalText: c.text,
+          timestamp: Date.now() + i, // Use index to ensure uniqueness
+          loading: true,
+          tags: []
+      }));
+      const placeholderTimestamps = new Set(placeholderRecords.map(p => p.timestamp));
+
+      // Add all placeholders at once
+      setHistory(prev => [...placeholderRecords, ...prev]);
+
+      for (let i = 0; i < casesToProcess.length; i++) {
+        const { text, source } = casesToProcess[i];
+        setProcessingProgress({ current: i + 1, total: casesToProcess.length });
+        const newRecord = await analyzeCase(text, source);
+        newRecords.push(newRecord);
+      }
+      
+      setHistory(prev => {
+          // Filter out the placeholders we added for this batch
+          const historyWithoutPlaceholders = prev.filter(p => !placeholderTimestamps.has(p.timestamp));
+          // Add the new final records (success or error)
+          return [...newRecords, ...historyWithoutPlaceholders].sort((a, b) => b.timestamp - a.timestamp);
+      });
+
+      setCaseText('');
+      setFiles(null);
+      setActiveTab('history');
+
+    } catch (err: unknown) {
+      console.error(t('errorReadFile'), err);
+      if (err instanceof Error) {
+        alert(`${t('errorReadFile')}: ${err.message}`);
+      } else {
+        alert(`${t('errorReadFile')}: ${String(err)}`);
+      }
+    } finally {
+      setIsLoading(false);
+      setIsProcessingFiles(false);
+      setProcessingProgress({ current: 0, total: 0 });
+    }
+  };
+
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (isLoading || isProcessingFiles) return;
+
+    if (files && files.length > 0) {
+        await handleAddCases('upload', files);
+    } else if (caseText.trim()) {
+        await handleAddCases('paste');
+    } else {
+        alert(t('errorPasteOrUpload'));
+    }
+  };
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = e.target.files;
+    if (selectedFiles && selectedFiles.length > 0) {
+      setFiles(selectedFiles);
+      setCaseText(''); // Clear textarea when files are selected
+    }
+  };
+
+  const filteredHistory = useMemo(() => {
+    let results = history;
+    if (activeTag) {
+      results = results.filter(c => c.tags?.includes(activeTag));
+    }
+    if (filter) {
+      const lowerFilter = filter.toLowerCase();
+      results = results.filter(c =>
+        c.originalText.toLowerCase().includes(lowerFilter) ||
+        (c.analysis?.title && c.analysis.title.toLowerCase().includes(lowerFilter)) ||
+        (c.analysis?.judgmentNumber && c.analysis.judgmentNumber.includes(lowerFilter)) ||
+        c.tags?.some(tag => tag.toLowerCase().includes(lowerFilter))
+      );
+    }
+    return results;
+  }, [history, filter, activeTag]);
+
+  const clearHistory = async () => {
+    if (confirm(t('confirmClearHistory'))) {
+      try {
+        await clearAllCasesFromDB();
+        await addLogEntry('HISTORY_CLEARED', 'All case analyses were cleared.');
+        setHistory([]);
+      } catch (error) {
+        console.error(t('errorClearHistory'), error);
+        alert(t('errorClearHistory'));
+      }
+    }
+  };
+  
+  const exportHistory = () => {
+    if (history.length === 0) {
+      alert(t('alertNoHistoryToExport'));
+      return;
+    }
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(history, null, 2));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", `judgment_analysis_history_${new Date().toISOString()}.json`);
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+    addLogEntry('HISTORY_EXPORTED', `Exported ${history.length} cases.`);
+  };
+
+  const toggleLang = () => {
+    setLang(prevLang => (prevLang === 'en' ? 'ar' : 'en'));
+  };
+
+  const handleRecordsTabClick = async () => {
+    setActiveTab('records');
+    setIsFetchingRecords(true);
+    try {
+        if (!isJudicialDataLoaded) {
+            const recordsWithDate = judicialData.map(record => ({
+                ...record,
+                scraped_at: record.scraped_at ? new Date(record.scraped_at).toISOString() : new Date().toISOString(),
+            }));
+            // Simulate bulk adding to DB if they don't exist
+            await Promise.all(recordsWithDate.map(addJudicialRecordToDB));
+            setIsJudicialDataLoaded(true);
+        }
+        
+        // Always load from DB on click
+        const records = await getJudicialRecordsFromDB();
+        setJudicialRecords(records);
+    } catch (err) {
+        console.error("Error loading judicial records:", err);
+        alert(t('errorLoadHistory'));
+    } finally {
+        setIsFetchingRecords(false);
+    }
+  };
+
+  return (
+    <div className="container">
+      <header>
+        <div className="header-top-controls">
+          <div className="theme-switcher">
+            <span className="material-symbols-outlined">{theme === 'light' ? 'light_mode' : 'dark_mode'}</span>
+              <label className="switch">
+                  <input type="checkbox" checked={theme === 'dark'} onChange={toggleTheme} />
+                  <span className="slider round"></span>
+              </label>
+          </div>
+          <button className="lang-switcher" onClick={toggleLang}>{lang === 'en' ? 'العربية' : 'English'}</button>
+          <button className="admin-toggle-btn" onClick={() => { setIsAdminView(!isAdminView); if (!isAdminView) { setActiveTab('admin'); } else { setActiveTab('analyze'); }}}>
+            <span className="material-symbols-outlined">{isAdminView ? 'visibility' : 'admin_panel_settings'}</span>
+            {isAdminView ? t('appViewButton') : t('adminDashboardButton')}
+          </button>
+        </div>
+        <h1>{t('appTitle')}</h1>
+        <p>{t('appDescription')}</p>
+      </header>
+
+      {isAdminView ? (
+        <AdminDashboard
+          history={history}
+          setHistory={setHistory}
+          allTags={allTags}
+          t={t}
+          dateLocale={dateLocale}
+          customSchema={customSchema}
+          setCustomSchema={setCustomSchema}
+          handleSaveSchema={handleSaveSchema}
+          isSavingSchema={isSavingSchema}
+          schemaSaveStatus={schemaSaveStatus}
+        />
+      ) : (
+        <>
+          <div className="tabs-container">
+            <button className={`tab-button ${activeTab === 'analyze' ? 'active' : ''}`} onClick={() => setActiveTab('analyze')} aria-controls="analyze-panel" aria-selected={activeTab === 'analyze'}>{t('analyzeTab')}</button>
+            <button className={`tab-button ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')} aria-controls="history-panel" aria-selected={activeTab === 'history'}>{t('historyTab')}</button>
+            <button 
+              className={`tab-button ${activeTab === 'records' ? 'active' : ''}`} 
+              onClick={handleRecordsTabClick}
+              aria-controls="records-panel" 
+              aria-selected={activeTab === 'records'}
+            >
+              {t('judicialRecordsTab')}
+            </button>
+          </div>
+
+          {activeTab === 'analyze' && (
+            <section id="analyze-panel" className="input-section" role="tabpanel" aria-labelledby="analyze-tab">
+              <form onSubmit={handleSubmit}>
+                <label htmlFor="case-text">{t('caseTextLabel')}</label>
+                <textarea
+                  id="case-text"
+                  value={caseText}
+                  onChange={(e) => {
+                    setCaseText(e.target.value);
+                    if (files) setFiles(null);
+                  }}
+                  placeholder={t('caseTextPlaceholder')}
+                  rows={10}
+                  disabled={!!files}
+                />
+
+                <div className="divider">{t('orDivider')}</div>
+
+                <label 
+                  htmlFor="file-upload" 
+                  ref={dropZoneRef}
+                  className={`drop-zone ${isDragging ? 'drag-over' : ''}`}
+                  aria-label={t('uploadFileLabel')}
+                >
+                    <input id="file-upload" type="file" multiple onChange={handleFileChange} accept=".json,.jsonl,.txt,.md,text/plain,application/json,text/markdown" />
+                    {files && files.length > 0 ? (
+                      <div className="file-list-display">
+                        <span className="file-list-title">{t('filesSelected', files.length)}</span>
+                        <ul className="file-list" aria-label="Selected files">
+                          {Array.from(files).map((file, index) => (
+                            <li key={index} className="file-list-item">
+                               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                               <span>{file.name}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      <div className="drop-zone-content">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" x2="12" y1="3" y2="15"></line></svg>
+                        <p className="drop-zone-text">{t('dragAndDropPrompt')}</p>
+                        <span className="file-label">{t('uploadFileLabel')}</span>
+                      </div>
+                    )}
+                </label>
+                
+                <button type="submit" disabled={isLoading || isProcessingFiles}>
+                  {isLoading ? t('analyzingButton') : t('analyzeButton')}
+                </button>
+
+                {(isLoading || isProcessingFiles) && (
+                  <div className="progress-indicator">
+                      <p>
+                        {isProcessingFiles && processingProgress.total > 0 && 
+                          t('parsingFileProgress', processingProgress.current, processingProgress.total)}
+                        {!isProcessingFiles && processingProgress.total > 0 &&
+                          t('analyzingCasesProgress', processingProgress.current, processingProgress.total)}
+                      </p>
+                      <div className="progress-bar-container">
+                          <div 
+                              className="progress-bar" 
+                              style={{ width: `${(processingProgress.current / (processingProgress.total || 1)) * 100}%` }}
+                          ></div>
+                      </div>
+                  </div>
+                )}
+              </form>
+            </section>
+          )}
+
+          {activeTab === 'history' && (
+            <section id="history-panel" className="output-section" role="tabpanel" aria-labelledby="history-tab">
+              <HistoryView 
+                history={filteredHistory} 
+                filter={filter}
+                setFilter={setFilter} 
+                clearHistory={clearHistory}
+                exportHistory={exportHistory}
+                setHistory={setHistory}
+                t={t}
+                dateLocale={dateLocale}
+                allTags={allTags}
+                activeTag={activeTag}
+                setActiveTag={setActiveTag}
+                analyzeCase={analyzeCase}
+                getGeminiSchema={getGeminiSchema}
+              />
+            </section>
+          )}
+
+          {activeTab === 'records' && (
+            <section id="records-panel" className="output-section" role="tabpanel" aria-labelledby="records-tab">
+              <JudicialRecordsViewer 
+                records={judicialRecords}
+                setRecords={setJudicialRecords}
+                selectedRecord={selectedRecord}
+                setSelectedRecord={setSelectedRecord}
+                isLoading={isFetchingRecords}
+                setIsLoading={setIsFetchingRecords}
+                t={t}
+              />
+            </section>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+const root = ReactDOM.createRoot(document.getElementById('root')!);
+root.render(<App />);
