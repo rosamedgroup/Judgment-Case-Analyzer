@@ -55,21 +55,21 @@ type TranslationKey = keyof Translations;
 
 const translations = {
   ar: {
-    appTitle: "محلل قضايا الأحكام",
-    appDescription: "الصق نص قضية حكم سعودية أو قم بتحميل ملفات (JSON, JSONL, TXT, MD) تحتوي على قضايا متعددة لاستخراج البيانات المنظمة.",
+    appTitle: "محلل الأحكام",
+    appDescription: "حلل الأحكام القضائية السعودية. الصق نص القضية أو قم بتحميل ملفات (JSON, JSONL, TXT, MD) لاستخراج رؤى منظمة.",
     caseTextLabel: "نص القضية",
-    caseTextPlaceholder: "الصق قضية واحدة أو أكثر هنا. افصل بين القضايا المتعددة بـ '---' على سطر جديد.",
+    caseTextPlaceholder: "الصق قضية واحدة أو أكثر. افصل بين القضايا بـ '---' على سطر جديد.",
     caseTextBatchSource: (index: number) => `قضية ملصقة #${index}`,
     orDivider: "أو",
     uploadFileLabel: "تحميل ملفات",
     analyzeButton: "تحليل",
     analyzingButton: "جاري التحليل...",
-    analysisHistoryTitle: "سجل التحليلات",
+    analysisHistoryTitle: "السجل",
     filterPlaceholder: "تصفية النتائج...",
     clearSearchLabel: "مسح البحث",
     exportHistoryButton: "تصدير السجل",
     clearHistoryButton: "مسح السجل",
-    noHistoryPlaceholder: "سيظهر تاريخ تحليلاتك هنا.",
+    noHistoryPlaceholder: "سيظهر سجل تحليلاتك هنا.",
     noFilterResultsPlaceholder: "لا توجد نتائج تطابق بحثك.",
     caseAnalysisTitle: "تحليل القضية",
     judgmentNumberPrefix: "حكم #",
@@ -261,7 +261,7 @@ const translations = {
     schemaSavedSuccess: "تم حفظ المخطط بنجاح.",
     errorSavingSchema: "فشل حفظ المخطط.",
     errorLoadSchema: "فشل تحميل المخطط المخصص.",
-    judicialRecordsTab: 'محرك بحث القضايا القانونية',
+    judicialRecordsTab: 'بحث القضايا',
     searchByKeyword: 'ابحث بالكلمة المفتاحية',
     searchByKeywordPlaceholder: 'مثال: عقد تجاري، إيجار',
     filtersTitle: 'عوامل التصفية',
@@ -359,16 +359,16 @@ const translations = {
     rulingTypeNonAcceptance: "عدم قبول",
   },
   en: {
-    appTitle: "Judgment Case Analyzer",
-    appDescription: "Paste Saudi judgment case text or upload files (JSON, JSONL, TXT, MD) containing multiple cases to extract structured data.",
+    appTitle: "Judgment Analyzer",
+    appDescription: "Analyze Saudi legal judgments. Paste case text or upload files (JSON, JSONL, TXT, MD) to extract structured insights.",
     caseTextLabel: "Case Text",
-    caseTextPlaceholder: "Paste one or more cases here. Separate multiple cases with '---' on a new line.",
+    caseTextPlaceholder: "Paste one or more cases. Separate multiple cases with '---' on a new line.",
     caseTextBatchSource: (index: number) => `Pasted Case #${index}`,
     orDivider: "or",
     uploadFileLabel: "Upload Files",
     analyzeButton: "Analyze",
     analyzingButton: "Analyzing...",
-    analysisHistoryTitle: "Analysis History",
+    analysisHistoryTitle: "History",
     filterPlaceholder: "Filter results...",
     clearSearchLabel: "Clear search",
     exportHistoryButton: "Export History",
@@ -563,7 +563,7 @@ const translations = {
     schemaSavedSuccess: "Schema saved successfully.",
     errorSavingSchema: "Failed to save schema.",
     errorLoadSchema: "Failed to load custom schema.",
-    judicialRecordsTab: 'Legal Case Search',
+    judicialRecordsTab: 'Case Search',
     searchByKeyword: 'Search by Keyword',
     searchByKeywordPlaceholder: 'e.g., commercial contract, rent',
     filtersTitle: 'Filters',
@@ -1417,7 +1417,7 @@ const HistoryView: React.FC<{ history: CaseRecord[], filter: string, setFilter: 
                     <input type="text" placeholder={t('filterPlaceholder')} value={filter} onChange={(e) => setFilter(e.target.value)} />
                     {filter && <button onClick={() => setFilter('')} className="clear-search-btn" aria-label={t('clearSearchLabel')}>&times;</button>}
                 </div>
-                <button onClick={exportHistory}>{t('exportHistoryButton')}</button>
+                <button onClick={exportHistory} className="secondary">{t('exportHistoryButton')}</button>
                 <button onClick={clearHistory} className="danger">{t('clearHistoryButton')}</button>
             </div>
             {allTags.length > 0 && (
