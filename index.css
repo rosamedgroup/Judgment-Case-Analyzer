@@ -116,6 +116,12 @@ h2 {
   border-bottom: 1px solid var(--border-color);
 }
 
+h2.page-title {
+    padding-bottom: 0;
+    border-bottom: none;
+    margin-bottom: calc(var(--spacing-unit) * 2);
+}
+
 h3 {
   font-size: 1.25rem;
   font-weight: 600;
@@ -650,30 +656,64 @@ pre {
 
 .records-viewer-layout {
   display: flex;
+  flex-direction: column;
   gap: calc(var(--spacing-unit) * 4);
-  padding: calc(var(--spacing-unit) * 4);
 }
-.output-section {
-    padding: 0;
+
+@media (min-width: 768px) {
+    .records-viewer-layout {
+        flex-direction: row;
+    }
 }
+
 .records-sidebar {
-  flex: 0 0 300px;
+  flex: 1 1 100%;
   padding: calc(var(--spacing-unit) * 3);
   background-color: var(--background-color);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
   align-self: flex-start;
 }
+@media (min-width: 768px) {
+    .records-sidebar {
+      flex: 0 0 300px;
+    }
+}
+.records-sidebar h3 {
+    margin-bottom: calc(var(--spacing-unit) * 3);
+    padding-bottom: calc(var(--spacing-unit) * 1.5);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.filter-group {
+    margin-bottom: calc(var(--spacing-unit) * 2.5);
+}
+
+.filter-group label {
+    display: block;
+    font-weight: 500;
+    font-size: 0.9rem;
+    color: var(--text-color);
+    margin-bottom: var(--spacing-unit);
+}
+.records-main-content {
+    flex: 1;
+    min-width: 0;
+}
+.records-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing-unit) * 2);
+}
+
 .record-card {
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
-  padding: calc(var(--spacing-unit) * 2) calc(var(--spacing-unit) * 3);
+  padding: calc(var(--spacing-unit) * 3);
   transition: all 0.2s ease-in-out;
   cursor: pointer;
   background-color: var(--card-background);
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--spacing-unit) * 1.5);
 }
 .record-card:hover {
   border-color: var(--primary-color);
@@ -685,7 +725,27 @@ pre {
   font-weight: 600;
   margin: 0;
   color: var(--primary-color);
+  margin-bottom: calc(var(--spacing-unit) * 2);
 }
+
+.record-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: calc(var(--spacing-unit) * 2);
+  color: var(--text-color-secondary);
+  font-size: 0.9rem;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-unit);
+}
+
+.meta-item .material-symbols-outlined {
+  font-size: 1.25rem;
+}
+
 .record-detail-view {
     padding: calc(var(--spacing-unit) * 4);
 }

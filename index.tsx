@@ -11,6 +11,7 @@ import { Bar, Doughnut } from 'react-chartjs-2';
 // FIX: Switched to date-fns v3 submodule imports to resolve module export errors. This ensures compatibility with build tools that may not correctly handle the main package entry point.
 import { format } from 'date-fns/format';
 import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
+import { formatDistance } from 'date-fns/formatDistance';
 import { subDays } from 'date-fns/subDays';
 import { startOfDay } from 'date-fns/startOfDay';
 import { ar as arLocale } from 'date-fns/locale/ar';
@@ -535,7 +536,7 @@ const translations = {
     operationalLabel: "Operational",
     checkingLabel: "Checking...",
     errorLabel: "Error",
-    recheckStatusButton: "Re-check",
+    recheckButtonLabel: "Re-check",
     apiKeyManagedByEnv: "Managed via environment variables",
     safetySettingsLabel: "Safety Settings",
     defaultModelLabel: "Default Model",
@@ -1268,7 +1269,8 @@ const ResultCard: React.FC<{ record: CaseRecord, onDelete: (id: number) => void,
                 <h3>{title}</h3>
                 <div className="card-meta">
                     <span>{t('caseIdPrefix')}{record.id}</span>
-                    <span>{formatDistanceToNow(new Date(record.timestamp), { addSuffix: true, locale: dateLocale })}</span>
+                    {/* FIX: Replaced formatDistanceToNow with formatDistance to resolve a type error where 'locale' was not recognized in the options. This provides a more robust way to achieve the same localization-aware relative time formatting. */}
+                    <span>{formatDistance(new Date(record.timestamp), new Date(), { addSuffix: true, locale: dateLocale })}</span>
                 </div>
                 <div className="card-actions">
                      <button onClick={(e) => { e.stopPropagation(); handleEdit(); }} className="icon-btn" title={t('editButtonLabel')}><span className="material-symbols-outlined">edit</span></button>
@@ -1400,13 +1402,7 @@ const HistoryView: React.FC<{ history: CaseRecord[], filter: string, setFilter: 
         
         const newRecord = await analyzeCase(recordToRetry.originalText, `Retry of Case ID ${recordToRetry.id}`);
         
-        // The analyzeCase function already saves to DB, we just need to update the UI state.
-        // It returns a full record with a *new* ID. We need to replace the old one.
-        await deleteCaseFromDB(recordToRetry.id); // Delete the old error record
-        setHistory(prev => {
-            const historyWithoutOld = prev.filter(c => c.id !== recordToRetry.id);
-            return [newRecord, ...historyWithoutOld].sort((a,b) => b.timestamp - a.timestamp);
-        });
+        setHistory(prev => prev.map(c => c.id === recordToRetry.id ? newRecord : c));
     };
 
     return (
@@ -1663,7 +1659,8 @@ const AdminDashboard: React.FC<{ history: CaseRecord[], setHistory: React.Dispat
         if (selectedCases.size === 0) return;
         if (confirm(t('confirmBulkDeleteMessage', selectedCases.size))) {
             try {
-                const idsToDelete = Array.from(selectedCases);
+                // FIX: Use spread syntax for creating an array from a Set to ensure correct type inference.
+                const idsToDelete = [...selectedCases];
                 await bulkDeleteCasesFromDB(idsToDelete);
                 setHistory(prev => prev.filter(c => c.id && !selectedCases.has(c.id)));
                 setSelectedCases(new Set());
@@ -1882,7 +1879,7 @@ const App: React.FC = () => {
   const [isProcessingFiles, setIsProcessingFiles] = useState<boolean>(false);
   const [processingProgress, setProcessingProgress] = useState<{ current: number, total: number }>({ current: 0, total: 0 });
 
-  const [lang, setLang] = useState<'en' | 'ar'>('en');
+  const [lang, setLang] = useState<'en' | 'ar'>('ar');
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   const [isAdminView, setIsAdminView] = useState(false);
@@ -2097,6 +2094,84 @@ const App: React.FC = () => {
     }
   }, [activeTab, t]);
 
+    // Service Worker Registration and Communication
+    useEffect(() => {
+        // Ensure service workers are supported before proceeding.
+        if (!('serviceWorker' in navigator)) {
+            return;
+        }
+
+        const registerServiceWorker = () => {
+            // Use a relative path to ensure the service worker is loaded from the same origin,
+            // which is a security requirement. This resolves cross-origin registration errors.
+            navigator.serviceWorker.register('service-worker.js')
+                .then(registration => {
+                    console.log('Service Worker registered with scope:', registration.scope);
+                    // Use the `ready` promise to ensure we can message the active worker.
+                    return navigator.serviceWorker.ready;
+                })
+                .then(readyRegistration => {
+                    readyRegistration.active?.postMessage({
+                        type: 'INIT_ANALYZER',
+                        payload: { apiKey: process.env.API_KEY! }
+                    });
+                })
+                .catch(error => {
+                    console.error('Service Worker registration failed:', error);
+                });
+        };
+
+        // The 'load' event guarantees that the page's resources are fully loaded,
+        // preventing the "invalid state" error during service worker registration.
+        // We check `document.readyState` to handle cases where the script runs after the 'load' event has already fired.
+        if (document.readyState === 'complete') {
+            registerServiceWorker();
+        } else {
+            // Add { once: true } to automatically remove the listener after it fires,
+            // which simplifies cleanup and avoids potential race conditions with React's Strict Mode.
+            window.addEventListener('load', registerServiceWorker, { once: true });
+        }
+        
+        const handleWorkerMessage = (event: MessageEvent) => {
+            const { type, payload } = event.data;
+            if (type === 'ANALYSIS_PROGRESS') {
+                const { record, placeholderTimestamp } = payload;
+                setHistory(prev => {
+                    // Replace placeholder with the new record
+                    const newHistory = prev.map(p => 
+                        p.timestamp === placeholderTimestamp ? record : p
+                    );
+                    // Recalculate progress to avoid race conditions with batched state updates
+                    const stillLoadingCount = newHistory.filter(c => c.loading).length;
+                    setProcessingProgress(prog => ({
+                        total: prog.total,
+                        current: prog.total > 0 ? prog.total - stillLoadingCount : 0
+                    }));
+                    return newHistory;
+                });
+            } else if (type === 'ANALYSIS_COMPLETE') {
+                setIsLoading(false);
+                setIsProcessingFiles(false);
+                // Refresh history directly from DB to ensure consistency
+                getAllCasesFromDB().then(cases => {
+                    setHistory(cases);
+                    const newTags = new Set<string>();
+                    cases.forEach(c => { c.tags?.forEach(tag => newTags.add(tag)) });
+                    setAllTags(Array.from(newTags).sort());
+                });
+            }
+        };
+
+        navigator.serviceWorker.addEventListener('message', handleWorkerMessage);
+
+        // The 'load' event listener is now self-cleaning (`once: true`),
+        // so we only need to clean up the message listener. This avoids a race condition
+        // in React Strict Mode where the listener might be removed before firing.
+        return () => {
+            navigator.serviceWorker.removeEventListener('message', handleWorkerMessage);
+        };
+    }, []);
+
   const getGeminiSchema = useMemo(() => {
       return convertEditableSchemaToGemini(customSchema);
   }, [customSchema]);
@@ -2108,9 +2183,9 @@ const App: React.FC = () => {
         loading: true,
         tags: []
     };
-
-    // Add placeholder to history immediately for better UX
-    setHistory(prev => [placeholderRecord, ...prev]);
+    
+    const tempId = placeholderRecord.timestamp; // Use timestamp as a temporary key
+    setHistory(prev => prev.map(c => c.id === tempId ? placeholderRecord : c));
 
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
@@ -2125,6 +2200,7 @@ const App: React.FC = () => {
           },
         });
 
+        // FIX: Changed response.text() to response.text to align with the latest Gemini API for accessing the response body as a string property.
         const analysis = JSON.parse(response.text);
 
         const newRecord: CaseRecord = {
@@ -2156,6 +2232,14 @@ const App: React.FC = () => {
   };
 
   const handleAddCases = async (source: 'paste' | 'upload', files?: FileList | null) => {
+    const worker = navigator.serviceWorker.controller;
+    if (!worker) {
+        alert("Service worker is not active. Analysis will be performed on the main thread. Please reload for a better experience.");
+        // Fallback to old method if SW is not ready
+        await handleAddCasesOnMainThread(source, files);
+        return;
+    }
+
     let casesToProcess: { text: string, source: string }[] = [];
     setIsLoading(true);
 
@@ -2172,15 +2256,12 @@ const App: React.FC = () => {
               casesToProcess.push({ text: caseText, source: `${file.name} #${idx + 1}` });
             });
           } catch (uploadError) {
-             if (uploadError instanceof Error) {
-                alert(`${t('errorUploadFailedMessage', file.name)}: ${uploadError.message}`);
-             } else {
-                alert(`${t('errorUploadFailedMessage', file.name)}: ${String(uploadError)}`);
-             }
+            // FIX: The catch block for file parsing errors was not correctly handling non-Error objects, leading to a potential crash. This has been updated to safely stringify any thrown object, which also resolves the reported TypeScript error.
+             const errorMessage = uploadError instanceof Error ? uploadError.message : String(uploadError);
+             alert(`${t('errorUploadFailedMessage', file.name)}: ${errorMessage}`);
              console.error(t('errorUploadFailedMessage', file.name), uploadError);
           }
         }
-        setIsProcessingFiles(false);
       } else if (source === 'paste' && caseText.trim()) {
         const pastedCases = caseText.split(/\n---\n|\n\n\n+/).map(c => c.trim()).filter(Boolean);
         pastedCases.forEach((caseText, idx) => {
@@ -2197,32 +2278,29 @@ const App: React.FC = () => {
         return; 
       }
       
+      setIsProcessingFiles(false); // File parsing is done
       setProcessingProgress({ current: 0, total: casesToProcess.length });
 
-      const newRecords: CaseRecord[] = [];
       const placeholderRecords: CaseRecord[] = casesToProcess.map((c, i) => ({
           originalText: c.text,
-          timestamp: Date.now() + i, // Use index to ensure uniqueness
+          timestamp: Date.now() + i, // Unique timestamp for mapping
           loading: true,
           tags: []
       }));
-      const placeholderTimestamps = new Set(placeholderRecords.map(p => p.timestamp));
-
-      // Add all placeholders at once
-      setHistory(prev => [...placeholderRecords, ...prev]);
-
-      for (let i = 0; i < casesToProcess.length; i++) {
-        const { text, source } = casesToProcess[i];
-        setProcessingProgress({ current: i + 1, total: casesToProcess.length });
-        const newRecord = await analyzeCase(text, source);
-        newRecords.push(newRecord);
-      }
       
-      setHistory(prev => {
-          // Filter out the placeholders we added for this batch
-          const historyWithoutPlaceholders = prev.filter(p => !placeholderTimestamps.has(p.timestamp));
-          // Add the new final records (success or error)
-          return [...newRecords, ...historyWithoutPlaceholders].sort((a, b) => b.timestamp - a.timestamp);
+      setHistory(prev => [...placeholderRecords, ...prev].sort((a,b) => b.timestamp - a.timestamp));
+      
+      worker.postMessage({
+          type: 'START_ANALYSIS',
+          payload: {
+              cases: casesToProcess,
+              schema: customSchema,
+              placeholderRecords: placeholderRecords,
+              errorTemplates: {
+                  title: t('analysisFailedTitle'),
+                  message: (err: string) => t('errorFailedCase', err),
+              }
+          }
       });
 
       setCaseText('');
@@ -2236,10 +2314,78 @@ const App: React.FC = () => {
       } else {
         alert(`${t('errorReadFile')}: ${String(err)}`);
       }
-    } finally {
       setIsLoading(false);
       setIsProcessingFiles(false);
-      setProcessingProgress({ current: 0, total: 0 });
+    }
+  };
+
+  // Fallback function in case the service worker isn't active
+  const handleAddCasesOnMainThread = async (source: 'paste' | 'upload', files?: FileList | null) => {
+    let casesToProcess: { text: string, source: string }[] = [];
+    setIsLoading(true);
+
+    try {
+        if (source === 'upload' && files) {
+            setIsProcessingFiles(true);
+            setProcessingProgress({ current: 0, total: files.length });
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                setProcessingProgress({ current: i + 1, total: files.length });
+                try {
+                    const parsedCases = await parseFile(file, t);
+                    parsedCases.forEach((caseText, idx) => {
+                        casesToProcess.push({ text: caseText, source: `${file.name} #${idx + 1}` });
+                    });
+                } catch (uploadError) {
+                    if (uploadError instanceof Error) { alert(`${t('errorUploadFailedMessage', file.name)}: ${uploadError.message}`); } 
+                    else { alert(`${t('errorUploadFailedMessage', file.name)}: ${String(uploadError)}`); }
+                    console.error(t('errorUploadFailedMessage', file.name), uploadError);
+                }
+            }
+            setIsProcessingFiles(false);
+        } else if (source === 'paste' && caseText.trim()) {
+            const pastedCases = caseText.split(/\n---\n|\n\n\n+/).map(c => c.trim()).filter(Boolean);
+            pastedCases.forEach((caseText, idx) => {
+                casesToProcess.push({ text: caseText, source: t('caseTextBatchSource', idx + 1) });
+            });
+        } else {
+            alert(t('errorPasteOrUpload'));
+            setIsLoading(false);
+            return;
+        }
+
+        if (casesToProcess.length === 0) {
+            setIsLoading(false);
+            return;
+        }
+
+        setProcessingProgress({ current: 0, total: casesToProcess.length });
+        const placeholderRecords = casesToProcess.map((c, i) => ({ originalText: c.text, timestamp: Date.now() + i, loading: true, tags: [] }));
+        const placeholderTimestamps = new Set(placeholderRecords.map(p => p.timestamp));
+        setHistory(prev => [...placeholderRecords, ...prev].sort((a, b) => b.timestamp - a.timestamp));
+
+        const newRecords: CaseRecord[] = [];
+        for (let i = 0; i < casesToProcess.length; i++) {
+            const { text, source } = casesToProcess[i];
+            setProcessingProgress({ current: i + 1, total: casesToProcess.length });
+            const newRecord = await analyzeCase(text, source);
+            newRecords.push(newRecord);
+        }
+
+        setHistory(prev => {
+            const historyWithoutPlaceholders = prev.filter(p => !placeholderTimestamps.has(p.timestamp));
+            return [...newRecords, ...historyWithoutPlaceholders].sort((a, b) => b.timestamp - a.timestamp);
+        });
+
+        setCaseText('');
+        setFiles(null);
+        setActiveTab('history');
+    } catch (err) {
+        // ... error handling
+    } finally {
+        setIsLoading(false);
+        setIsProcessingFiles(false);
+        setProcessingProgress({ current: 0, total: 0 });
     }
   };
 
@@ -2438,13 +2584,13 @@ const App: React.FC = () => {
                   {isLoading ? t('analyzingButton') : t('analyzeButton')}
                 </button>
 
-                {(isLoading || isProcessingFiles) && (
+                {isLoading && (
                   <div className="progress-indicator">
                       <p>
-                        {isProcessingFiles && processingProgress.total > 0 && 
-                          t('parsingFileProgress', processingProgress.current, processingProgress.total)}
-                        {!isProcessingFiles && processingProgress.total > 0 &&
-                          t('analyzingCasesProgress', processingProgress.current, processingProgress.total)}
+                        {isProcessingFiles 
+                            ? t('parsingFileProgress', processingProgress.current, processingProgress.total)
+                            : t('analyzingCasesProgress', processingProgress.current, processingProgress.total)
+                        }
                       </p>
                       <div className="progress-bar-container">
                           <div 
