@@ -7,7 +7,9 @@ import React, { useState, FormEvent, ChangeEvent, useEffect, useMemo, useCallbac
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
-import { Bar, Doughnut } from 'react-chartjs-2';
+// FIX: Using a namespace import for react-chartjs-2 and destructuring with a cast to any to resolve "no exported member" errors. This circumvents module resolution mismatches between the library and the build environment.
+import * as ReactChartJS from 'react-chartjs-2';
+const { Bar, Doughnut } = ReactChartJS as any;
 // FIX: Switched to date-fns v3 submodule imports to resolve module export errors. This ensures compatibility with build tools that may not correctly handle the main package entry point.
 import { format } from 'date-fns/format';
 import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
@@ -126,7 +128,7 @@ const translations = {
     errorInvalidJson: "تنسيق JSON غير صالح. يرجى التحقق من محتوى الملف.",
     errorFileNotArray: "الملف الذي تم تحليله لم ينتج عنه مصفوفة من القضايا.",
     errorFileNoCases: "لا تحتوي الملفات على أي قضايا لتحليلها.",
-    errorFileNonString: "لم يتم العثور على أي نص صالح في الملف.",
+    errorFileNonString: "لم يتم العور على أي نص صالح في الملف.",
     errorFailedCase: (err: string) => `فشل تحليل القضية. الخطأ: ${err}`,
     errorReadFile: "فشل قراءة الملف.",
     errorLoadHistory: "تعذر تحميل سجل التحليل.",
@@ -192,12 +194,13 @@ const translations = {
     userManagementSection: "إدارة المستخدمين",
     contentManagementSection: "إدارة المحتوى",
     securityMonitoringSection: "الأمان والمراقبة",
-    configurationSettingsSection: "الإعدادات",
+    configurationSettingsSection: "إعدادات",
     totalCasesAnalyzed: "إجمالي القضايا المحللة",
     casesWithAppeals: "قضايا باستئناف",
     analysisErrors: "أخطاء التحليل",
     totalUniqueTags: "إجمالي الوسوم الفريدة",
     casesAnalyzedLast30Days: "القضايا المحللة في آخر 30 يومًا",
+    casesAnalyzedLast30DaysLabel: "القضايا المحللة في آخر 30 يومًا",
     casesByAppealStatus: "القضايا حسب حالة الاستئناف",
     withAppeal: "مع استئناف",
     withoutAppeal: "بدون استئناف",
@@ -274,7 +277,7 @@ const translations = {
     filterByDecision: 'القرار',
     allRecords: 'الكل',
     resetFilters: 'إعادة تعيين',
-    noRecordsFound: 'لم يتم العثور على سجلات قضائية.',
+    noRecordsFound: 'لم يتم العور على قضايا جديدة مطابقة لبحثك.',
     selectACase: 'اختر قضية من القائمة لعرض التفاصيل.',
     tableOfContents: 'جدول المحتويات',
     casePathfinder: 'مستكشف القضايا',
@@ -288,7 +291,7 @@ const translations = {
     errorPossibleCauses: "الأسباب المحتملة",
     errorHowToFix: "كيفية الإصلاح",
     errorRawDetails: "تفاصيل الخطأ الخام",
-    errorParsingWhatHappened: "أنشأت خدمة التحليل استجابة، ولكن لا يمكن فهمها كبيانات منظمة صالحة. يمكن أن يحدث هذا إذا انحرف الإخراج عن تنسيق JSON المتوقع.",
+    errorParsingWhatHappened: "أنشأت خدمة التحليل استجابة، ولكن لا يمكن فهمها كبيانات منظمة صالحة. يمكن أن يحدث هذا إذا انحرف الإخراج عن تنسيق JSON الـمتوقع.",
     errorParsingCauseAmbiguous: "كان النص المدخل غامضًا أو منسقًا بشكل غير عادي، مما أربك النموذج.",
     errorParsingCauseModelCreative: "أدت إبداعية النموذج إلى إخراج لا يتبع المخطط المطلوب بصرامة.",
     errorParsingCauseGlitch: "حدث خلل مؤقت لمرة واحدة في خدمة التحليل.",
@@ -311,14 +314,15 @@ const translations = {
     errorTokenLimitFixSeparate: "إذا قمت بلصق حالات متعددة، فتأكد من فصلها بـ '---' على سطر جديد.",
     errorSafetyWhatHappened: "قامت عوامل تصفية الأمان الخاصة بالنموذج بحظر إما النص المدخل أو التحليل الذي تم إنشاؤه لأنه تم الإبلاغ عنه على أنه قد يكون ضارًا.",
     errorSafetyCauseInput: "قد يحتوي نص القضية الأصلي على محتوى أدى إلى تشغيل سياسة الأمان (على سبيل المثال، تفاصيل شخصية حساسة، لغة عدوانية).",
-    errorSafetyCauseOutput: "تم الإبلاغ عن استجابة النموذج التي تم إنشاؤها على أنها غير لائقة قبل إعادتها.",
+    errorSafetyCauseOutput: "تم الإبلاغ عن استجابة النموذج التي تم إنشاؤه على أنها غير لائقة قبل إعادتها.",
     errorSafetyFixReview: "راجع النص الأصلي وأزل أو أعد صياغة أي محتوى يمكن اعتباره حساسًا أو ضارًا أو غير أخلاقي.",
     errorSafetyFixSimplify: "حاول تبسيط النص للتركيز على الوقائع والأحكام القانونية الأساسية.",
+    errorSafetyFixModeration: "راجع سياسات السلامة والأخلاقيات المتبعة في التحليل القانوني.",
     errorShortTextWhatHappened: "كان النص المقدم للتحليل قصيرًا جدًا أو يفتقر إلى السياق الكافي للنموذج لإنتاج نتيجة ذات معنى.",
     errorShortTextCauseEmpty: "كانت منطقة إدخال النص أو الملف الذي تم تحميله فارغًا أو يحتوي على مسافات بيضاء فقط.",
     errorShortTextCauseLacksContext: "احتوى النص على عدد قليل جدًا من الكلمات ليتم تحديده كقضية قانونية.",
     errorShortTextFixProvideMore: "قدم النص الكامل والمفصل لقضية الحكم.",
-    errorShortTextFixCheckFile: "تأكد من أن الملف الذي قمت بتحميله يحتوي على محتوى القضية الصحيح.",
+    errorShortTextFixCheckFile: "تأكد من أن الملف الذي قمت تحميله يحتوي على محتوى القضية الصحيح.",
     errorUnclearTextWhatHappened: "لم يتمكن النموذج من تحليل بنية النص المقدم أو فهم سياقه.",
     errorUnclearTextCauseFormatting: "يحتوي النص على تنسيق ضعيف أو أخطاء إملائية كبيرة أو ليس مستندًا قانونيًا صالحًا.",
     errorUnclearTextCauseLanguage: "النص بلغة أو لهجة كافح النموذج لفهمها في سياق قانوني.",
@@ -353,7 +357,7 @@ const translations = {
     fetchingCases: "جاري جلب القضايا...",
     fetchCasesSuccess: (count: number) => `تم جلب ${count} قضية جديدة بنجاح.`,
     fetchCasesError: "فشل جلب السجلات القضائية من الواجهة البرمجية.",
-    noNewCasesFound: "لم يتم العثور على قضايا جديدة مطابقة لبحثك.",
+    noNewCasesFound: "لم يتم العور على قضايا جديدة مطابقة لبحثك.",
     rulingTypeElzam: "إلزام",
     rulingTypeNoJurisdiction: "عدم اختصاص",
     rulingTypeDismissal: "رفض",
@@ -500,6 +504,7 @@ const translations = {
     analysisErrors: "Analysis Errors",
     totalUniqueTags: "Total Unique Tags",
     casesAnalyzedLast30Days: "Cases Analyzed (Last 30 Days)",
+    casesAnalyzedLast30DaysLabel: "Cases Analyzed (Last 30 Days)",
     casesByAppealStatus: "Cases by Appeal Status",
     withAppeal: "With Appeal",
     withoutAppeal: "Without Appeal",
@@ -1107,7 +1112,7 @@ const classifyGeminiError = (error: any, t: TFunction): CaseError => {
           whatHappened: t('errorTokenLimitWhatHappened'),
           possibleCauses: [t('errorTokenLimitCauseLargeDoc'), t('errorTokenLimitCauseCombinedCases')],
           howToFix: [t('errorTokenLimitFixSplit'), t('errorTokenLimitFixSeparate')]
-      };
+      }
   } else if (errorMessage.includes('SAFETY')) {
       title = t('errorSafetyTitle');
       summary = t('errorSafetyMessage');
@@ -1628,11 +1633,11 @@ const AdminDashboard: React.FC<{ history: CaseRecord[], setHistory: React.Dispat
             totalCases,
             casesWithAppeals,
             analysisErrors,
-            casesAnalyzedLast30Days: { labels, data },
-            casesByAppealStatus: {
+            casesWithAppealsData: {
                 labels: [t('withAppeal'), t('withoutAppeal')],
                 data: [casesWithAppeals, successfulAnalyses.length - casesWithAppeals],
-            }
+            },
+            casesAnalyzedLast30Days: { labels, data },
         };
     }, [history, t]);
     
@@ -1726,18 +1731,18 @@ const AdminDashboard: React.FC<{ history: CaseRecord[], setHistory: React.Dispat
                     <div className="analytics-section">
                        <div className="stat-cards-grid">
                            <div className="stat-card"><h4>{t('totalCasesAnalyzed')}</h4><p>{analyticsData.totalCases}</p></div>
-                           <div className="stat-card"><h4>{t('casesWithAppeals')}</h4><p>{analyticsData.casesWithAppeals}</p></div>
+                           <div className="stat-card"><h4>{t('casesWithAppeals')}</h4><p>{analyticsData.totalCases > 0 ? analyticsData.casesWithAppeals : 0}</p></div>
                            <div className="stat-card"><h4>{t('analysisErrors')}</h4><p>{analyticsData.analysisErrors}</p></div>
                            <div className="stat-card"><h4>{t('totalUniqueTags')}</h4><p>{allTags.length}</p></div>
                        </div>
                        <div className="charts-grid">
                            <div className="chart-wrapper">
-                               <h3>{t('casesAnalyzedLast30Days')}</h3>
-                               <Bar data={{ labels: analyticsData.casesAnalyzedLast30Days.labels, datasets: [{ label: t('casesAnalyzedLast30Days'), data: analyticsData.casesAnalyzedLast30Days.data, backgroundColor: 'rgba(54, 162, 235, 0.6)' }] }} options={{ responsive: true, plugins: { legend: { display: false } } }} />
+                               <h3>{t('casesAnalyzedLast30DaysLabel')}</h3>
+                               <Bar data={{ labels: analyticsData.casesAnalyzedLast30Days.labels, datasets: [{ label: t('casesAnalyzedLast30DaysLabel'), data: analyticsData.casesAnalyzedLast30Days.data, backgroundColor: 'rgba(54, 162, 235, 0.6)' }] }} options={{ responsive: true, plugins: { legend: { display: false } } }} />
                            </div>
                             <div className="chart-wrapper">
                                <h3>{t('casesByAppealStatus')}</h3>
-                               <Doughnut data={{ labels: analyticsData.casesByAppealStatus.labels, datasets: [{ data: analyticsData.casesByAppealStatus.data, backgroundColor: ['rgba(75, 192, 192, 0.6)', 'rgba(255, 159, 64, 0.6)'] }] }} options={{ responsive: true }} />
+                               <Doughnut data={{ labels: analyticsData.casesWithAppealsData.labels, datasets: [{ data: analyticsData.casesWithAppealsData.data, backgroundColor: ['rgba(75, 192, 192, 0.6)', 'rgba(255, 159, 64, 0.6)'] }] }} options={{ responsive: true }} />
                            </div>
                        </div>
                     </div>
@@ -1880,7 +1885,11 @@ const App: React.FC = () => {
   const [processingProgress, setProcessingProgress] = useState<{ current: number, total: number }>({ current: 0, total: 0 });
 
   const [lang, setLang] = useState<'en' | 'ar'>('ar');
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const saved = localStorage.getItem('theme');
+    if (saved === 'dark' || saved === 'light') return saved as 'light' | 'dark';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
 
   const [isAdminView, setIsAdminView] = useState(false);
 
@@ -1903,27 +1912,13 @@ const App: React.FC = () => {
 
 
   useEffect(() => {
-    const currentTheme = document.documentElement.getAttribute('data-theme');
-    if (currentTheme === 'dark' || currentTheme === 'light') {
-      setTheme(currentTheme);
-    } else {
-       // Default to light if no theme or an invalid theme is set
-       const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-       setTheme(prefersDark ? 'dark' : 'light');
-    }
-  }, []);
-
-  useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     document.documentElement.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+    localStorage.setItem('theme', theme);
   }, [theme, lang]);
 
   const toggleTheme = () => {
-    setTheme(prevTheme => {
-        const newTheme = prevTheme === 'light' ? 'dark' : 'light';
-        document.documentElement.setAttribute('data-theme', newTheme);
-        return newTheme;
-    });
+    setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
   };
 
   const { t, dateLocale } = useMemo(() => {
@@ -1988,15 +1983,6 @@ const App: React.FC = () => {
   useEffect(() => {
     const dropZone = dropZoneRef.current;
     if (dropZone) {
-      // Use 'dragenter' and 'dragleave' on the window to detect dragging over the page
-      const handleWindowDragEnter = (e: DragEvent) => {
-        // Check if files are being dragged
-        if (e.dataTransfer && e.dataTransfer.types.includes('Files')) {
-          // This check is important, otherwise it might trigger for text drags, etc.
-          // No visual change needed here, we just need to know files are being dragged
-        }
-      };
-
       // When dragging enters the dropzone specifically
       const handleZoneDragEnter = (e: DragEvent) => {
         e.preventDefault();
@@ -2096,42 +2082,76 @@ const App: React.FC = () => {
 
     // Service Worker Registration and Communication
     useEffect(() => {
+        // AI Studio/Proxied Environment Fix: 
+        // Aggressively clear out <base> tags which are often injected to redirect 
+        // relative URLs to 'https://ai.studio', causing Service Worker origin mismatches.
+        const clearBaseTags = () => {
+            const baseTags = document.querySelectorAll('base');
+            baseTags.forEach(tag => tag.remove());
+        };
+        clearBaseTags();
+
         // Ensure service workers are supported before proceeding.
         if (!('serviceWorker' in navigator)) {
             return;
         }
 
-        const registerServiceWorker = () => {
-            // Use a relative path to ensure the service worker is loaded from the same origin,
-            // which is a security requirement. This resolves cross-origin registration errors.
-            navigator.serviceWorker.register('service-worker.js')
-                .then(registration => {
-                    console.log('Service Worker registered with scope:', registration.scope);
-                    // Use the `ready` promise to ensure we can message the active worker.
-                    return navigator.serviceWorker.ready;
-                })
-                .then(readyRegistration => {
-                    readyRegistration.active?.postMessage({
+        /**
+         * Attempts to register the service worker with a resilient strategy.
+         */
+        const registerServiceWorker = async () => {
+            // Check if document is actually ready to avoid InvalidStateError
+            if (document.readyState === 'loading') {
+                window.addEventListener('load', () => registerServiceWorker(), { once: true });
+                return;
+            }
+
+            // Ensure base tags are cleared again just before registration.
+            clearBaseTags();
+
+            // Special handling for sandboxed environments like AI Studio
+            // Service workers require a secure origin (https or localhost) and cannot be registered 
+            // from blob URLs or environments with a null origin.
+            const isInvalidOrigin = window.location.protocol === 'blob:' || 
+                                   window.location.origin === 'null' || 
+                                   !window.location.origin ||
+                                   window.location.protocol === 'file:';
+                                   
+            if (isInvalidOrigin) {
+                console.info('Service Worker: Registration skipped in this environment (blob/null/file origin). Falling back to main-thread analysis.');
+                return;
+            }
+
+            try {
+                // Use new URL constructor to resolve path accurately relative to current window
+                const swUrl = new URL('service-worker.js', window.location.href).href;
+                
+                // IMPORTANT: The service-worker.js uses ESM imports, so we MUST specify type: 'module'
+                const registration = await navigator.serviceWorker.register(swUrl, { 
+                    scope: './',
+                    type: 'module' 
+                });
+                
+                console.log('Service Worker: Registered successfully with scope:', registration.scope);
+                
+                // Wait for the active worker
+                const readyRegistration = await navigator.serviceWorker.ready;
+                if (readyRegistration.active) {
+                    readyRegistration.active.postMessage({
                         type: 'INIT_ANALYZER',
                         payload: { apiKey: process.env.API_KEY! }
                     });
-                })
-                .catch(error => {
-                    console.error('Service Worker registration failed:', error);
-                });
+                }
+            } catch (error: any) {
+                // Handle common protocol errors common in some preview environments
+                if (error?.message?.includes('protocol') || error?.name === 'SecurityError') {
+                    console.warn('Service Worker: Registration failed due to environment security/protocol restrictions. Using main-thread fallback.', error.message);
+                } else {
+                    console.error('Service Worker: Registration failed:', error);
+                }
+            }
         };
 
-        // The 'load' event guarantees that the page's resources are fully loaded,
-        // preventing the "invalid state" error during service worker registration.
-        // We check `document.readyState` to handle cases where the script runs after the 'load' event has already fired.
-        if (document.readyState === 'complete') {
-            registerServiceWorker();
-        } else {
-            // Add { once: true } to automatically remove the listener after it fires,
-            // which simplifies cleanup and avoids potential race conditions with React's Strict Mode.
-            window.addEventListener('load', registerServiceWorker, { once: true });
-        }
-        
         const handleWorkerMessage = (event: MessageEvent) => {
             const { type, payload } = event.data;
             if (type === 'ANALYSIS_PROGRESS') {
@@ -2164,10 +2184,11 @@ const App: React.FC = () => {
 
         navigator.serviceWorker.addEventListener('message', handleWorkerMessage);
 
-        // The 'load' event listener is now self-cleaning (`once: true`),
-        // so we only need to clean up the message listener. This avoids a race condition
-        // in React Strict Mode where the listener might be removed before firing.
+        // A small delay for environmental stability
+        const timeoutId = setTimeout(registerServiceWorker, 1000);
+
         return () => {
+            clearTimeout(timeoutId);
             navigator.serviceWorker.removeEventListener('message', handleWorkerMessage);
         };
     }, []);
@@ -2184,8 +2205,10 @@ const App: React.FC = () => {
         tags: []
     };
     
-    const tempId = placeholderRecord.timestamp; // Use timestamp as a temporary key
-    setHistory(prev => prev.map(c => c.id === tempId ? placeholderRecord : c));
+    // For retries, we use the id to replace the record. For new cases, analyzeCase is called
+    // by a handler that manages its own placeholders.
+    // So this setHistory call is only really for retries.
+    setHistory(prev => prev.map(c => c.id === placeholderRecord.id ? placeholderRecord : c));
 
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
@@ -2200,7 +2223,6 @@ const App: React.FC = () => {
           },
         });
 
-        // FIX: Changed response.text() to response.text to align with the latest Gemini API for accessing the response body as a string property.
         const analysis = JSON.parse(response.text);
 
         const newRecord: CaseRecord = {
@@ -2256,7 +2278,6 @@ const App: React.FC = () => {
               casesToProcess.push({ text: caseText, source: `${file.name} #${idx + 1}` });
             });
           } catch (uploadError) {
-            // FIX: The catch block for file parsing errors was not correctly handling non-Error objects, leading to a potential crash. This has been updated to safely stringify any thrown object, which also resolves the reported TypeScript error.
              const errorMessage = uploadError instanceof Error ? uploadError.message : String(uploadError);
              alert(`${t('errorUploadFailedMessage', file.name)}: ${errorMessage}`);
              console.error(t('errorUploadFailedMessage', file.name), uploadError);
@@ -2360,287 +2381,233 @@ const App: React.FC = () => {
         }
 
         setProcessingProgress({ current: 0, total: casesToProcess.length });
-        const placeholderRecords = casesToProcess.map((c, i) => ({ originalText: c.text, timestamp: Date.now() + i, loading: true, tags: [] }));
-        const placeholderTimestamps = new Set(placeholderRecords.map(p => p.timestamp));
-        setHistory(prev => [...placeholderRecords, ...prev].sort((a, b) => b.timestamp - a.timestamp));
+        
+        const placeholderRecords: CaseRecord[] = casesToProcess.map((c, i) => ({
+            originalText: c.text,
+            timestamp: Date.now() + i,
+            loading: true,
+        }));
 
-        const newRecords: CaseRecord[] = [];
+        setHistory(prev => [...placeholderRecords, ...prev]);
+        
         for (let i = 0; i < casesToProcess.length; i++) {
-            const { text, source } = casesToProcess[i];
-            setProcessingProgress({ current: i + 1, total: casesToProcess.length });
-            const newRecord = await analyzeCase(text, source);
-            newRecords.push(newRecord);
+            setProcessingProgress(prog => ({ ...prog, current: i + 1 }));
+            const placeholderTimestamp = placeholderRecords[i].timestamp;
+            const result = await analyzeCase(casesToProcess[i].text, casesToProcess[i].source);
+            setHistory(prev => prev.map(p => p.timestamp === placeholderTimestamp ? result : p));
         }
 
-        setHistory(prev => {
-            const historyWithoutPlaceholders = prev.filter(p => !placeholderTimestamps.has(p.timestamp));
-            return [...newRecords, ...historyWithoutPlaceholders].sort((a, b) => b.timestamp - a.timestamp);
-        });
+        const cases = await getAllCasesFromDB();
+        setHistory(cases);
+        const newTags = new Set<string>();
+        cases.forEach(c => { c.tags?.forEach(tag => newTags.add(tag)) });
+        setAllTags(Array.from(newTags).sort());
 
+        setIsLoading(false);
         setCaseText('');
         setFiles(null);
         setActiveTab('history');
     } catch (err) {
-        // ... error handling
-    } finally {
+        console.error(t('errorReadFile'), err);
+        if (err instanceof Error) {
+            alert(`${t('errorReadFile')}: ${err.message}`);
+        } else {
+            alert(`${t('errorReadFile')}: ${String(err)}`);
+        }
         setIsLoading(false);
         setIsProcessingFiles(false);
-        setProcessingProgress({ current: 0, total: 0 });
     }
   };
 
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (isLoading || isProcessingFiles) return;
-
-    if (files && files.length > 0) {
-        await handleAddCases('upload', files);
-    } else if (caseText.trim()) {
-        await handleAddCases('paste');
-    } else {
-        alert(t('errorPasteOrUpload'));
-    }
-  };
-
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = e.target.files;
-    if (selectedFiles && selectedFiles.length > 0) {
-      setFiles(selectedFiles);
-      setCaseText(''); // Clear textarea when files are selected
-    }
-  };
-
-  const filteredHistory = useMemo(() => {
-    let results = history;
-    if (activeTag) {
-      results = results.filter(c => c.tags?.includes(activeTag));
-    }
-    if (filter) {
-      const lowerFilter = filter.toLowerCase();
-      results = results.filter(c =>
-        c.originalText.toLowerCase().includes(lowerFilter) ||
-        (c.analysis?.title && c.analysis.title.toLowerCase().includes(lowerFilter)) ||
-        (c.analysis?.judgmentNumber && c.analysis.judgmentNumber.includes(lowerFilter)) ||
-        c.tags?.some(tag => tag.toLowerCase().includes(lowerFilter))
-      );
-    }
-    return results;
-  }, [history, filter, activeTag]);
-
-  const clearHistory = async () => {
+  const handleClearHistory = async () => {
     if (confirm(t('confirmClearHistory'))) {
       try {
         await clearAllCasesFromDB();
-        await addLogEntry('HISTORY_CLEARED', 'All case analyses were cleared.');
         setHistory([]);
+        setAllTags([]);
+        setActiveTag(null);
+        await addLogEntry('HISTORY_CLEARED', `All cases cleared by user.`);
       } catch (error) {
         console.error(t('errorClearHistory'), error);
         alert(t('errorClearHistory'));
       }
     }
   };
-  
-  const exportHistory = () => {
+
+  const handleExportHistory = () => {
     if (history.length === 0) {
       alert(t('alertNoHistoryToExport'));
       return;
     }
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(history, null, 2));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", `judgment_analysis_history_${new Date().toISOString()}.json`);
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
+    const dataStr = JSON.stringify(history, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+    const exportFileDefaultName = 'analysis_history.json';
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
     addLogEntry('HISTORY_EXPORTED', `Exported ${history.length} cases.`);
   };
 
-  const toggleLang = () => {
-    setLang(prevLang => (prevLang === 'en' ? 'ar' : 'en'));
-  };
+  const filteredHistory = useMemo(() => {
+    return history.filter(record => {
+        const lowerCaseFilter = filter.toLowerCase();
+        const tagMatch = !activeTag || (record.tags && record.tags.includes(activeTag));
+        if (!tagMatch) return false;
 
-  const handleRecordsTabClick = async () => {
-    setActiveTab('records');
-    setIsFetchingRecords(true);
-    try {
-        if (!isJudicialDataLoaded) {
-            const recordsWithDate = judicialData.map(record => ({
-                ...record,
-                scraped_at: record.scraped_at ? new Date(record.scraped_at).toISOString() : new Date().toISOString(),
-            }));
-            // Simulate bulk adding to DB if they don't exist
-            await Promise.all(recordsWithDate.map(addJudicialRecordToDB));
-            setIsJudicialDataLoaded(true);
+        if (!filter) return tagMatch;
+
+        const contentMatch =
+            JSON.stringify(record.analysis || {}).toLowerCase().includes(lowerCaseFilter) ||
+            record.originalText.toLowerCase().includes(lowerCaseFilter) ||
+            (record.error && ((record.error.title || '').toLowerCase().includes(lowerCaseFilter) || (record.error.summary || '').toLowerCase().includes(lowerCaseFilter))) ||
+            (record.tags && record.tags.some(tag => tag.toLowerCase().includes(lowerCaseFilter)));
+
+        return contentMatch;
+    });
+  }, [history, filter, activeTag]);
+  
+  useEffect(() => {
+    const loadJudicialData = async () => {
+      if (activeTab === 'records' && !isJudicialDataLoaded) {
+        setIsFetchingRecords(true);
+        try {
+          await new Promise(resolve => setTimeout(resolve, 500)); 
+          
+          let recordsFromDb = await getJudicialRecordsFromDB();
+          if(recordsFromDb.length === 0) {
+              let addedCount = 0;
+              for (const record of judicialData) {
+                  const result = await addJudicialRecordToDB(record);
+                  if (result === 'success') {
+                      addedCount++;
+                  }
+              }
+              recordsFromDb = await getJudicialRecordsFromDB();
+          }
+
+          setJudicialRecords(recordsFromDb);
+          setIsJudicialDataLoaded(true);
+        } catch (error) {
+          console.error(t('fetchCasesError'), error);
+          alert(t('fetchCasesError'));
+        } finally {
+          setIsFetchingRecords(false);
         }
-        
-        // Always load from DB on click
-        const records = await getJudicialRecordsFromDB();
-        setJudicialRecords(records);
-    } catch (err) {
-        console.error("Error loading judicial records:", err);
-        alert(t('errorLoadHistory'));
-    } finally {
-        setIsFetchingRecords(false);
-    }
-  };
+      }
+    };
+    loadJudicialData();
+  }, [activeTab, isJudicialDataLoaded, t]);
 
   return (
-    <div className="container">
+    <div className="app-container">
       <header>
-        <div className="header-top-controls">
-          <div className="theme-switcher">
-            <span className="material-symbols-outlined">{theme === 'light' ? 'light_mode' : 'dark_mode'}</span>
-              <label className="switch">
-                  <input type="checkbox" checked={theme === 'dark'} onChange={toggleTheme} />
-                  <span className="slider round"></span>
-              </label>
+        <h1>{t('appTitle')}</h1>
+        <div className="header-controls">
+          <button onClick={() => setActiveTab(activeTab === 'admin' ? 'analyze' : 'admin')} className="admin-toggle">
+            <span className="material-symbols-outlined">{activeTab === 'admin' ? 'visibility' : 'admin_panel_settings'}</span>
+            {activeTab === 'admin' ? t('appViewButton') : t('adminDashboardButton')}
+          </button>
+          <div className="language-switcher">
+            <button onClick={() => setLang('en')} className={lang === 'en' ? 'active' : ''}>EN</button>
+            <button onClick={() => setLang('ar')} className={lang === 'ar' ? 'active' : ''}>AR</button>
           </div>
-          <button className="lang-switcher" onClick={toggleLang}>{lang === 'en' ? 'العربية' : 'English'}</button>
-          <button className="admin-toggle-btn" onClick={() => { setIsAdminView(!isAdminView); if (!isAdminView) { setActiveTab('admin'); } else { setActiveTab('analyze'); }}}>
-            <span className="material-symbols-outlined">{isAdminView ? 'visibility' : 'admin_panel_settings'}</span>
-            {isAdminView ? t('appViewButton') : t('adminDashboardButton')}
+          <button onClick={toggleTheme} className="theme-toggle" aria-label={t('themeLabel')}>
+            <span className="material-symbols-outlined">{theme === 'light' ? 'dark_mode' : 'light_mode'}</span>
           </button>
         </div>
-        <h1>{t('appTitle')}</h1>
-        <p>{t('appDescription')}</p>
       </header>
+      
+      {activeTab !== 'admin' && (
+        <nav className="main-tabs">
+          <button className={activeTab === 'analyze' ? 'active' : ''} onClick={() => setActiveTab('analyze')}>{t('analyzeTab')}</button>
+          <button className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}>{t('historyTab')}</button>
+          <button className={activeTab === 'records' ? 'active' : ''} onClick={() => setActiveTab('records')}>{t('judicialRecordsTab')}</button>
+        </nav>
+      )}
 
-      {isAdminView ? (
-        <AdminDashboard
-          history={history}
-          setHistory={setHistory}
-          allTags={allTags}
-          t={t}
-          dateLocale={dateLocale}
-          customSchema={customSchema}
-          setCustomSchema={setCustomSchema}
-          handleSaveSchema={handleSaveSchema}
-          isSavingSchema={isSavingSchema}
-          schemaSaveStatus={schemaSaveStatus}
-        />
-      ) : (
-        <>
-          <div className="tabs-container">
-            <button className={`tab-button ${activeTab === 'analyze' ? 'active' : ''}`} onClick={() => setActiveTab('analyze')} aria-controls="analyze-panel" aria-selected={activeTab === 'analyze'}>{t('analyzeTab')}</button>
-            <button className={`tab-button ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')} aria-controls="history-panel" aria-selected={activeTab === 'history'}>{t('historyTab')}</button>
-            <button 
-              className={`tab-button ${activeTab === 'records' ? 'active' : ''}`} 
-              onClick={handleRecordsTabClick}
-              aria-controls="records-panel" 
-              aria-selected={activeTab === 'records'}
-            >
-              {t('judicialRecordsTab')}
-            </button>
-          </div>
-
-          {activeTab === 'analyze' && (
-            <section id="analyze-panel" className="input-section" role="tabpanel" aria-labelledby="analyze-tab">
-              <form onSubmit={handleSubmit}>
+      <main>
+        {activeTab === 'analyze' && (
+          <section className="analyze-section">
+            <p className="app-description">{t('appDescription')}</p>
+            <div className="input-area">
+              <div className="text-input">
                 <label htmlFor="case-text">{t('caseTextLabel')}</label>
                 <textarea
-                  id="case-text"
-                  value={caseText}
-                  onChange={(e) => {
-                    setCaseText(e.target.value);
-                    if (files) setFiles(null);
-                  }}
-                  placeholder={t('caseTextPlaceholder')}
-                  rows={10}
-                  disabled={!!files}
+                  id="case-text" value={caseText}
+                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => { setCaseText(e.target.value); setFiles(null); }}
+                  placeholder={t('caseTextPlaceholder')} rows={15} disabled={isLoading}
                 />
-
-                <div className="divider">{t('orDivider')}</div>
-
-                <label 
-                  htmlFor="file-upload" 
-                  ref={dropZoneRef}
-                  className={`drop-zone ${isDragging ? 'drag-over' : ''}`}
-                  aria-label={t('uploadFileLabel')}
-                >
-                    <input id="file-upload" type="file" multiple onChange={handleFileChange} accept=".json,.jsonl,.txt,.md,text/plain,application/json,text/markdown" />
-                    {files && files.length > 0 ? (
-                      <div className="file-list-display">
-                        <span className="file-list-title">{t('filesSelected', files.length)}</span>
-                        <ul className="file-list" aria-label="Selected files">
-                          {Array.from(files).map((file, index) => (
-                            <li key={index} className="file-list-item">
-                               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                               <span>{file.name}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : (
-                      <div className="drop-zone-content">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" x2="12" y1="3" y2="15"></line></svg>
-                        <p className="drop-zone-text">{t('dragAndDropPrompt')}</p>
-                        <span className="file-label">{t('uploadFileLabel')}</span>
-                      </div>
-                    )}
+              </div>
+              <div className="divider">{t('orDivider')}</div>
+              <div className="file-input">
+                <label htmlFor="file-upload" className={`drop-zone ${isDragging ? 'dragging' : ''}`} ref={dropZoneRef}>
+                  {files && files.length > 0 ? (
+                    <span>{t('filesSelected', files.length)}</span>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined">upload_file</span>
+                      <p>{t('dragAndDropPrompt')}</p>
+                      <span>{t('uploadFileLabel')}</span>
+                    </>
+                  )}
                 </label>
-                
-                <button type="submit" disabled={isLoading || isProcessingFiles}>
-                  {isLoading ? t('analyzingButton') : t('analyzeButton')}
-                </button>
+                <input
+                  type="file" id="file-upload" multiple
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => { setFiles(e.target.files); setCaseText(''); }}
+                  accept=".json,.jsonl,.txt,.md" style={{ display: 'none' }} disabled={isLoading}
+                />
+              </div>
+            </div>
+            <button
+              onClick={() => handleAddCases(files ? 'upload' : 'paste', files)}
+              disabled={isLoading || (!caseText.trim() && !files)} className="analyze-btn"
+            >
+              {isLoading ? (
+                <>
+                  <div className="spinner-small"></div>
+                  {isProcessingFiles ? t('parsingFileProgress', processingProgress.current, processingProgress.total) : t('analyzingCasesProgress', processingProgress.current, processingProgress.total)}
+                </>
+              ) : t('analyzeButton')}
+            </button>
+          </section>
+        )}
 
-                {isLoading && (
-                  <div className="progress-indicator">
-                      <p>
-                        {isProcessingFiles 
-                            ? t('parsingFileProgress', processingProgress.current, processingProgress.total)
-                            : t('analyzingCasesProgress', processingProgress.current, processingProgress.total)
-                        }
-                      </p>
-                      <div className="progress-bar-container">
-                          <div 
-                              className="progress-bar" 
-                              style={{ width: `${(processingProgress.current / (processingProgress.total || 1)) * 100}%` }}
-                          ></div>
-                      </div>
-                  </div>
-                )}
-              </form>
-            </section>
-          )}
+        {activeTab === 'history' && (
+          <HistoryView
+            history={filteredHistory} filter={filter} setFilter={setFilter}
+            clearHistory={handleClearHistory} exportHistory={handleExportHistory}
+            setHistory={setHistory} t={t} dateLocale={dateLocale}
+            allTags={allTags} activeTag={activeTag} setActiveTag={setActiveTag}
+            analyzeCase={analyzeCase} getGeminiSchema={getGeminiSchema}
+          />
+        )}
+        
+        {activeTab === 'records' && (
+            <JudicialRecordsViewer 
+                records={judicialRecords} setRecords={setJudicialRecords}
+                selectedRecord={selectedRecord} setSelectedRecord={setSelectedRecord}
+                isLoading={isFetchingRecords} setIsLoading={setIsFetchingRecords} t={t}
+            />
+        )}
 
-          {activeTab === 'history' && (
-            <section id="history-panel" className="output-section" role="tabpanel" aria-labelledby="history-tab">
-              <HistoryView 
-                history={filteredHistory} 
-                filter={filter}
-                setFilter={setFilter} 
-                clearHistory={clearHistory}
-                exportHistory={exportHistory}
-                setHistory={setHistory}
-                t={t}
-                dateLocale={dateLocale}
-                allTags={allTags}
-                activeTag={activeTag}
-                setActiveTag={setActiveTag}
-                analyzeCase={analyzeCase}
-                getGeminiSchema={getGeminiSchema}
-              />
-            </section>
-          )}
-
-          {activeTab === 'records' && (
-            <section id="records-panel" className="output-section" role="tabpanel" aria-labelledby="records-tab">
-              <JudicialRecordsViewer 
-                records={judicialRecords}
-                setRecords={setJudicialRecords}
-                selectedRecord={selectedRecord}
-                setSelectedRecord={setSelectedRecord}
-                isLoading={isFetchingRecords}
-                setIsLoading={setIsFetchingRecords}
-                t={t}
-              />
-            </section>
-          )}
-        </>
-      )}
+        {activeTab === 'admin' && (
+            <AdminDashboard 
+                history={history} setHistory={setHistory} allTags={allTags}
+                t={t} dateLocale={dateLocale}
+                customSchema={customSchema} setCustomSchema={setCustomSchema}
+                handleSaveSchema={handleSaveSchema} isSavingSchema={isSavingSchema}
+                schemaSaveStatus={schemaSaveStatus}
+            />
+        )}
+      </main>
     </div>
   );
 };
-const root = ReactDOM.createRoot(document.getElementById('root')!);
-root.render(<App />);
+
+const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
