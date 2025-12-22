@@ -82,7 +82,11 @@ const translations: any = {
     back: "رجوع",
     export: "تصدير",
     delete: "حذف",
-    details: "التفاصيل"
+    details: "التفاصيل",
+    legalAnalytics: "تحليلات قانونية",
+    topCitedLaws: "الأنظمة الأكثر استشهاداً",
+    frequencyCount: (count: number) => `تكرر ${count} مرّات في سجلاتك`,
+    commonReferences: "المراجع الشائعة"
   },
   en: {
     appTitle: "Smart Judicial Analyzer",
@@ -105,7 +109,11 @@ const translations: any = {
     back: "Back",
     export: "Export",
     delete: "Delete",
-    details: "Details"
+    details: "Details",
+    legalAnalytics: "Legal Analytics",
+    topCitedLaws: "Most Frequently Cited Laws",
+    frequencyCount: (count: number) => `Cited ${count} times in history`,
+    commonReferences: "Common References"
   }
 };
 
@@ -176,14 +184,11 @@ const Navigation = ({ activeTab, setActiveTab, t }: any) => (
 );
 
 const MarkdownText = ({ text }: { text: string }) => {
-  // Simple markdown renderer for bold and lists since we can't import heavy libs easily
   const formatted = text
     .split('\n')
     .map((line, i) => {
       let content = line;
-      // Bold
       content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      // Lists
       if (line.trim().startsWith('* ') || line.trim().startsWith('- ')) {
         return <li key={i} dangerouslySetInnerHTML={{ __html: content.substring(2) }} />;
       }
@@ -193,7 +198,33 @@ const MarkdownText = ({ text }: { text: string }) => {
   return <div className="legal-content">{formatted}</div>;
 };
 
-const AnalysisDetails = ({ analysis, t }: any) => (
+const LegalAnalyticsDashboard = ({ lawsCited, globalLawStats, t }: any) => {
+  const topCitedInApp = Object.entries(globalLawStats)
+    .sort((a: any, b: any) => b[1] - a[1])
+    .slice(0, 3);
+
+  return (
+    <div className="card" style={{ background: 'var(--bg-surface-alt)', border: 'none', marginTop: '1rem', borderRight: '4px solid var(--brand-accent)' }}>
+      <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1rem', fontSize: '0.9rem', color: 'var(--brand-primary)' }}>
+        <span className="material-symbols-outlined" style={{ fontSize: '1.2rem' }}>analytics</span>
+        {t('legalAnalytics')}
+      </h4>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <p style={{ fontSize: '0.8rem', fontWeight: '600' }}>{t('commonReferences')}</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          {topCitedInApp.map(([law, count]: any, idx) => (
+            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>{law}</span>
+              <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>{count}x</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AnalysisDetails = ({ analysis, globalLawStats, t }: any) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginTop: '1.5rem' }}>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
       <div className="card" style={{ background: 'var(--bg-surface-alt)', border: 'none' }}>
@@ -206,16 +237,20 @@ const AnalysisDetails = ({ analysis, t }: any) => (
       </div>
     </div>
 
-    <section>
-      <h3 className="card-title" style={{ fontSize: '1rem' }}>{t('parties')}</h3>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-        {analysis.parties.map((p: any, idx: number) => (
-          <span key={idx} className="badge" style={{ textTransform: 'none', padding: '0.5rem 1rem' }}>
-            <strong>{p.role}:</strong> {p.name}
-          </span>
-        ))}
-      </div>
-    </section>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
+      <section>
+        <h3 className="card-title" style={{ fontSize: '1rem' }}>{t('parties')}</h3>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+          {analysis.parties.map((p: any, idx: number) => (
+            <span key={idx} className="badge" style={{ textTransform: 'none', padding: '0.5rem 1rem' }}>
+              <strong>{p.role}:</strong> {p.name}
+            </span>
+          ))}
+        </div>
+      </section>
+
+      {globalLawStats && <LegalAnalyticsDashboard lawsCited={analysis.lawsCited} globalLawStats={globalLawStats} t={t} />}
+    </div>
 
     <section>
       <h3 className="card-title" style={{ fontSize: '1rem' }}>{t('proceduralHistory')}</h3>
@@ -240,17 +275,28 @@ const AnalysisDetails = ({ analysis, t }: any) => (
     {analysis.lawsCited && analysis.lawsCited.length > 0 && (
       <section>
         <h3 className="card-title" style={{ fontSize: '1rem' }}>{t('lawsCited')}</h3>
-        <ul style={{ paddingInlineStart: '1.25rem', color: 'var(--text-secondary)' }}>
-          {analysis.lawsCited.map((law: string, idx: number) => (
-            <li key={idx}>{law}</li>
-          ))}
-        </ul>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {analysis.lawsCited.map((law: string, idx: number) => {
+            const freq = globalLawStats?.[law] || 0;
+            return (
+              <div key={idx} style={{ padding: '0.75rem', background: 'var(--bg-surface-alt)', borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.9rem' }}>{law}</span>
+                {freq > 1 && (
+                  <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: '0.9rem', verticalAlign: 'middle', marginRight: '4px' }}>trending_up</span>
+                    {t('frequencyCount')(freq)}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </section>
     )}
   </div>
 );
 
-const AnalyzeSection = ({ text, setText, onAnalyze, isLoading, result, t }: any) => (
+const AnalyzeSection = ({ text, setText, onAnalyze, isLoading, result, globalLawStats, t }: any) => (
   <div className="grid-analyze">
     <section className="card">
       <h2 className="card-title"><span className="material-symbols-outlined">description</span> {t('analyze')}</h2>
@@ -269,7 +315,7 @@ const AnalyzeSection = ({ text, setText, onAnalyze, isLoading, result, t }: any)
       {result && (
         <div style={{ marginTop: '2.5rem', borderTop: '2px solid var(--border-subtle)', paddingTop: '2rem' }}>
           <h2 className="card-title">{result.analysis.title}</h2>
-          <AnalysisDetails analysis={result.analysis} t={t} />
+          <AnalysisDetails analysis={result.analysis} globalLawStats={globalLawStats} t={t} />
         </div>
       )}
     </section>
@@ -293,18 +339,56 @@ const AnalyzeSection = ({ text, setText, onAnalyze, isLoading, result, t }: any)
   </div>
 );
 
-const HistorySection = ({ history, onDelete, t, locale }: any) => {
+const HistorySection = ({ history, onDelete, onUpdate, globalLawStats, t, locale }: any) => {
   const [selected, setSelected] = useState<any>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+
+  const handleSave = () => {
+    if (onUpdate && selected) {
+      onUpdate(selected.id, editTitle);
+      setSelected((prev: any) => ({ ...prev, analysis: { ...prev.analysis, title: editTitle } }));
+      setIsEditing(false);
+    }
+  };
 
   if (selected) {
     return (
       <div className="container">
-        <button className="btn btn-secondary" style={{ marginBottom: '1.5rem' }} onClick={() => setSelected(null)}>
+        <button className="btn btn-secondary" style={{ marginBottom: '1.5rem' }} onClick={() => { setSelected(null); setIsEditing(false); }}>
           <span className="material-symbols-outlined">arrow_back</span> {t('back')}
         </button>
         <div className="card">
-          <h2 className="card-title">{selected.analysis.title}</h2>
-          <AnalysisDetails analysis={selected.analysis} t={t} />
+          {isEditing ? (
+             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
+                <input 
+                  className="input-field" 
+                  value={editTitle} 
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+                  autoFocus
+                />
+                <button className="btn btn-primary" onClick={handleSave}>
+                  <span className="material-symbols-outlined">check</span>
+                </button>
+                <button className="btn btn-secondary" onClick={() => setIsEditing(false)}>
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+             </div>
+          ) : (
+             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+               <h2 className="card-title" style={{ marginBottom: 0 }}>{selected.analysis.title}</h2>
+               <button 
+                  className="btn btn-secondary" 
+                  style={{ padding: '0.4rem', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} 
+                  onClick={() => { setEditTitle(selected.analysis.title); setIsEditing(true); }}
+                  title="Edit Title"
+               >
+                  <span className="material-symbols-outlined" style={{ fontSize: '1.2rem' }}>edit</span>
+               </button>
+             </div>
+          )}
+          <AnalysisDetails analysis={selected.analysis} globalLawStats={globalLawStats} t={t} />
         </div>
       </div>
     );
@@ -346,7 +430,7 @@ const HistorySection = ({ history, onDelete, t, locale }: any) => {
   );
 };
 
-const RepositorySection = ({ records, t }: any) => {
+const RepositorySection = ({ records, globalLawStats, t }: any) => {
   const [selected, setSelected] = useState<any>(null);
   
   if (selected) return (
@@ -360,6 +444,13 @@ const RepositorySection = ({ records, t }: any) => {
           <span className="badge">{selected.judgment_court_name}</span>
           <span className="badge">{selected.judgment_hijri_date}</span>
         </div>
+        
+        {globalLawStats && (
+          <div style={{ marginBottom: '2rem' }}>
+             <LegalAnalyticsDashboard globalLawStats={globalLawStats} t={t} />
+          </div>
+        )}
+
         <div className="legal-content" dangerouslySetInnerHTML={{ __html: selected.judgment_text }}></div>
       </div>
     </div>
@@ -414,6 +505,16 @@ const App = () => {
     getAllCasesFromDB().then(setHistory);
   }, []);
 
+  const globalLawStats = useMemo(() => {
+    const counts: Record<string, number> = {};
+    history.forEach(rec => {
+      rec.analysis?.lawsCited?.forEach((law: string) => {
+        counts[law] = (counts[law] || 0) + 1;
+      });
+    });
+    return counts;
+  }, [history]);
+
   const t = (key: string) => translations[lang][key] || key;
   const dateLocale = lang === 'ar' ? arLocale : enLocale;
 
@@ -427,8 +528,18 @@ const App = () => {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
       const prompt = `You are a Senior Saudi Legal Analyst. Analyze the provided Saudi legal judgment in its original Arabic.
       Extract detailed structured data following the requested schema.
-      For text fields like 'facts', 'reasons', 'ruling', and 'proceduralHistory', use professional legal Markdown (e.g., **bold** for emphasis, bullet points for lists).
-      Identify all parties, procedural history sessions, and specifically cited laws/articles.
+      
+      CRITICAL INSTRUCTION FOR 'lawsCited':
+      - Extract every specific law, regulation, or royal decree mentioned.
+      - STRICTLY FORMAT specific article citations as: 'المادة [رقم] من [اسم النظام]' (e.g., 'المادة 76 من نظام المرافعات الشرعية').
+      - NORMALIZE all law names to their official standard Arabic titles.
+      - EXCLUDE general references (e.g., "according to the system", "based on the regulation") if the specific law name is not provided.
+      
+      CRITICAL INSTRUCTION FOR TEXT FIELDS ('facts', 'reasons', 'ruling', 'proceduralHistory'):
+      - You MUST use Markdown formatting to improve readability.
+      - Use **bold** for important names, dates, amounts, and legal terms.
+      - Use bullet points (- ) for listing chronological events, arguments, or evidences.
+      - Ensure the text is well-structured and easy to read.
       
       Legal Judgment Text:
       ${caseText}`;
@@ -461,6 +572,14 @@ const App = () => {
     setHistory(prev => prev.filter(h => h.id !== id));
   };
 
+  const handleUpdate = async (id: number, newTitle: string) => {
+    const record = history.find(h => h.id === id);
+    if (!record) return;
+    const updatedRecord = { ...record, analysis: { ...record.analysis, title: newTitle } };
+    await putCaseInDB(updatedRecord);
+    setHistory(prev => prev.map(h => h.id === id ? updatedRecord : h));
+  };
+
   return (
     <div className="layout-root">
       <Header lang={lang} setLang={setLang} theme={theme} toggleTheme={toggleTheme} t={t} />
@@ -474,23 +593,36 @@ const App = () => {
             onAnalyze={handleAnalyze} 
             isLoading={isLoading} 
             result={currentResult}
+            globalLawStats={globalLawStats}
             t={t} 
           />
         )}
         
         {activeTab === 'history' && (
-          <HistorySection history={history} onDelete={handleDelete} t={t} locale={dateLocale} />
+          <HistorySection history={history} onDelete={handleDelete} onUpdate={handleUpdate} globalLawStats={globalLawStats} t={t} locale={dateLocale} />
         )}
         
         {activeTab === 'records' && (
-          <RepositorySection records={judicialData} t={t} />
+          <RepositorySection records={judicialData} globalLawStats={globalLawStats} t={t} />
         )}
         
         {activeTab === 'admin' && (
           <div className="card" style={{ textAlign: 'center', padding: '5rem' }}>
             <span className="material-symbols-outlined" style={{ fontSize: '5rem', color: 'var(--brand-primary)', opacity: 0.1 }}>dashboard_customize</span>
-            <h2 style={{ marginTop: '1rem' }}>لوحة التحكم قيد التطوير</h2>
-            <p style={{ color: 'var(--text-muted)' }}>ستتمكن قريباً من عرض إحصائيات متقدمة حول القضايا المحللة.</p>
+            <h2 style={{ marginTop: '1rem' }}>{t('admin')}</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem', marginTop: '2rem' }}>
+               <div className="card">
+                 <h4>{t('topCitedLaws')}</h4>
+                 <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {Object.entries(globalLawStats).sort((a: any, b: any) => b[1] - a[1]).slice(0, 5).map(([law, count]: any, i) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem', background: 'var(--bg-surface-alt)', borderRadius: 'var(--radius-sm)' }}>
+                        <span style={{ fontSize: '0.9rem' }}>{law}</span>
+                        <span className="badge badge-success">{count}</span>
+                      </div>
+                    ))}
+                 </div>
+               </div>
+            </div>
           </div>
         )}
       </div>
