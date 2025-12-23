@@ -86,7 +86,17 @@ const translations: any = {
     legalAnalytics: "تحليلات قانونية",
     topCitedLaws: "الأنظمة الأكثر استشهاداً",
     frequencyCount: (count: number) => `تكرر ${count} مرّات في سجلاتك`,
-    commonReferences: "المراجع الشائعة"
+    commonReferences: "المراجع الشائعة",
+    // New translations for bulk actions
+    select: "تحديد",
+    cancel: "إلغاء",
+    selectAll: "تحديد الكل",
+    deselectAll: "إلغاء التحديد",
+    deleteSelected: "حذف المحدد",
+    exportSelected: "تصدير المحدد",
+    exportAll: "تصدير الكل",
+    confirmBulkDelete: "هل أنت متأكد من حذف السجلات المحددة؟ هذه العملية لا يمكن التراجع عنها.",
+    selectedCount: (n: number) => `${n} محدد`
   },
   en: {
     appTitle: "Smart Judicial Analyzer",
@@ -113,7 +123,17 @@ const translations: any = {
     legalAnalytics: "Legal Analytics",
     topCitedLaws: "Most Frequently Cited Laws",
     frequencyCount: (count: number) => `Cited ${count} times in history`,
-    commonReferences: "Common References"
+    commonReferences: "Common References",
+    // New translations for bulk actions
+    select: "Select",
+    cancel: "Cancel",
+    selectAll: "Select All",
+    deselectAll: "Deselect All",
+    deleteSelected: "Delete Selected",
+    exportSelected: "Export Selected",
+    exportAll: "Export All",
+    confirmBulkDelete: "Are you sure you want to delete the selected records? This action cannot be undone.",
+    selectedCount: (n: number) => `${n} selected`
   }
 };
 
@@ -339,10 +359,14 @@ const AnalyzeSection = ({ text, setText, onAnalyze, isLoading, result, globalLaw
   </div>
 );
 
-const HistorySection = ({ history, onDelete, onUpdate, globalLawStats, t, locale }: any) => {
+const HistorySection = ({ history, onDelete, onUpdate, onBulkDelete, globalLawStats, t, locale }: any) => {
   const [selected, setSelected] = useState<any>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
+  
+  // Bulk Action State
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const handleSave = () => {
     if (onUpdate && selected) {
@@ -350,6 +374,57 @@ const HistorySection = ({ history, onDelete, onUpdate, globalLawStats, t, locale
       setSelected((prev: any) => ({ ...prev, analysis: { ...prev.analysis, title: editTitle } }));
       setIsEditing(false);
     }
+  };
+
+  const toggleSelectionMode = () => {
+    setIsSelectionMode(!isSelectionMode);
+    setSelectedIds(new Set());
+  };
+
+  const toggleSelectId = (id: number) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === history.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(history.map((h: any) => h.id)));
+    }
+  };
+
+  const handleBulkExport = () => {
+     const items = isSelectionMode 
+         ? history.filter((h: any) => selectedIds.has(h.id))
+         : history;
+     
+     if (items.length === 0) return;
+
+     const dataStr = JSON.stringify(items, null, 2);
+     const blob = new Blob([dataStr], { type: "application/json" });
+     const url = URL.createObjectURL(blob);
+     const link = document.createElement("a");
+     link.href = url;
+     link.download = `judgment_analysis_export_${new Date().toISOString().slice(0,10)}.json`;
+     document.body.appendChild(link);
+     link.click();
+     document.body.removeChild(link);
+     
+     if (isSelectionMode) {
+         setIsSelectionMode(false);
+         setSelectedIds(new Set());
+     }
+  };
+  
+  const handleBulkDeleteClick = () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    onBulkDelete(ids);
+    setIsSelectionMode(false);
+    setSelectedIds(new Set());
   };
 
   if (selected) {
@@ -396,9 +471,47 @@ const HistorySection = ({ history, onDelete, onUpdate, globalLawStats, t, locale
 
   return (
     <div className="container">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <h2>{t('history')}</h2>
-        <button className="btn btn-secondary"><span className="material-symbols-outlined">download</span> {t('export')}</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+        <h2 style={{margin: 0}}>{t('history')}</h2>
+        
+        {history.length > 0 && (
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            {isSelectionMode ? (
+              <>
+                <button className="btn btn-secondary" onClick={handleSelectAll}>
+                  {selectedIds.size === history.length ? t('deselectAll') : t('selectAll')}
+                </button>
+                <button 
+                  className="btn btn-secondary" 
+                  onClick={handleBulkDeleteClick}
+                  disabled={selectedIds.size === 0}
+                  style={{ color: 'var(--status-error)' }}
+                >
+                  <span className="material-symbols-outlined">delete</span> {t('deleteSelected')}
+                </button>
+                <button 
+                  className="btn btn-secondary"
+                  onClick={handleBulkExport}
+                  disabled={selectedIds.size === 0}
+                >
+                  <span className="material-symbols-outlined">download</span> {t('exportSelected')}
+                </button>
+                <button className="btn btn-secondary" onClick={toggleSelectionMode}>
+                  {t('cancel')}
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="btn btn-secondary" onClick={toggleSelectionMode}>
+                  <span className="material-symbols-outlined">check_box</span> {t('select')}
+                </button>
+                <button className="btn btn-secondary" onClick={handleBulkExport}>
+                  <span className="material-symbols-outlined">download</span> {t('exportAll')}
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
       
       {history.length === 0 ? (
@@ -408,22 +521,48 @@ const HistorySection = ({ history, onDelete, onUpdate, globalLawStats, t, locale
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          {history.map((rec: any) => (
-            <div key={rec.id} className="card card-clickable" onClick={() => setSelected(rec)}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div>
-                  <h3 style={{ marginBottom: '0.5rem' }}>{rec.analysis?.title || rec.originalText.substring(0, 50) + '...'}</h3>
-                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                     <span className="badge">{rec.analysis?.courtName}</span>
-                     <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{formatDistance(new Date(rec.timestamp), new Date(), { locale, addSuffix: true })}</p>
+          {history.map((rec: any) => {
+            const isSelected = selectedIds.has(rec.id);
+            return (
+              <div 
+                key={rec.id} 
+                className={`card card-clickable ${isSelected ? 'selected-card' : ''}`}
+                style={{ 
+                   cursor: 'pointer', 
+                   border: isSelected ? '2px solid var(--brand-primary)' : '1px solid var(--border-subtle)',
+                   background: isSelected ? 'var(--brand-primary-soft)' : 'var(--bg-surface)'
+                }}
+                onClick={() => isSelectionMode ? toggleSelectId(rec.id) : setSelected(rec)}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
+                  {isSelectionMode && (
+                    <div style={{ paddingTop: '0.25rem' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={isSelected} 
+                          onChange={() => toggleSelectId(rec.id)}
+                          style={{ width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
+                        />
+                    </div>
+                  )}
+                  <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <h3 style={{ marginBottom: '0.5rem' }}>{rec.analysis?.title || rec.originalText.substring(0, 50) + '...'}</h3>
+                      <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                         <span className="badge">{rec.analysis?.courtName}</span>
+                         <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{formatDistance(new Date(rec.timestamp), new Date(), { locale, addSuffix: true })}</p>
+                      </div>
+                    </div>
+                    {!isSelectionMode && (
+                      <button className="btn btn-secondary" style={{ color: 'var(--status-error)', padding: '0.5rem' }} onClick={(e) => { e.stopPropagation(); onDelete(rec.id); }}>
+                        <span className="material-symbols-outlined">delete</span>
+                      </button>
+                    )}
                   </div>
                 </div>
-                <button className="btn btn-secondary" style={{ color: 'var(--status-error)', padding: '0.5rem' }} onClick={(e) => { e.stopPropagation(); onDelete(rec.id); }}>
-                  <span className="material-symbols-outlined">delete</span>
-                </button>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -571,6 +710,15 @@ const App = () => {
     await deleteCaseFromDB(id);
     setHistory(prev => prev.filter(h => h.id !== id));
   };
+  
+  const handleBulkDelete = async (ids: number[]) => {
+    if (window.confirm(translations[lang].confirmBulkDelete)) {
+      for (const id of ids) {
+        await deleteCaseFromDB(id);
+      }
+      setHistory(prev => prev.filter(h => !ids.includes(h.id)));
+    }
+  };
 
   const handleUpdate = async (id: number, newTitle: string) => {
     const record = history.find(h => h.id === id);
@@ -599,7 +747,15 @@ const App = () => {
         )}
         
         {activeTab === 'history' && (
-          <HistorySection history={history} onDelete={handleDelete} onUpdate={handleUpdate} globalLawStats={globalLawStats} t={t} locale={dateLocale} />
+          <HistorySection 
+            history={history} 
+            onDelete={handleDelete} 
+            onUpdate={handleUpdate} 
+            onBulkDelete={handleBulkDelete}
+            globalLawStats={globalLawStats} 
+            t={t} 
+            locale={dateLocale} 
+          />
         )}
         
         {activeTab === 'records' && (
