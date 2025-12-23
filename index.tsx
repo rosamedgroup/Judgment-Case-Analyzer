@@ -87,7 +87,6 @@ const translations: any = {
     topCitedLaws: "الأنظمة الأكثر استشهاداً",
     frequencyCount: (count: number) => `تكرر ${count} مرّات في سجلاتك`,
     commonReferences: "المراجع الشائعة",
-    // New translations for bulk actions
     select: "تحديد",
     cancel: "إلغاء",
     selectAll: "تحديد الكل",
@@ -96,7 +95,10 @@ const translations: any = {
     exportSelected: "تصدير المحدد",
     exportAll: "تصدير الكل",
     confirmBulkDelete: "هل أنت متأكد من حذف السجلات المحددة؟ هذه العملية لا يمكن التراجع عنها.",
-    selectedCount: (n: number) => `${n} محدد`
+    selectedCount: (n: number) => `${n} محدد`,
+    citationCount: "عدد مرات الاستشهاد",
+    analyzeThisCase: "تحليل هذه القضية بالذكاء الاصطناعي",
+    repositoryNotice: "هذه البيانات مستخرجة من السجلات العامة. للحصول على تحليل قانوني متعمق (مثل استخراج المواد النظامية وتلخيص دقيق)، استخدم زر التحليل بالذكاء الاصطناعي."
   },
   en: {
     appTitle: "Smart Judicial Analyzer",
@@ -124,7 +126,6 @@ const translations: any = {
     topCitedLaws: "Most Frequently Cited Laws",
     frequencyCount: (count: number) => `Cited ${count} times in history`,
     commonReferences: "Common References",
-    // New translations for bulk actions
     select: "Select",
     cancel: "Cancel",
     selectAll: "Select All",
@@ -133,7 +134,10 @@ const translations: any = {
     exportSelected: "Export Selected",
     exportAll: "Export All",
     confirmBulkDelete: "Are you sure you want to delete the selected records? This action cannot be undone.",
-    selectedCount: (n: number) => `${n} selected`
+    selectedCount: (n: number) => `${n} selected`,
+    citationCount: "Citation Count",
+    analyzeThisCase: "Analyze this case with AI",
+    repositoryNotice: "These data are from public records. For in-depth legal analysis (e.g. extracting statutes and precise summary), use the AI Analysis button."
   }
 };
 
@@ -166,6 +170,53 @@ const ANALYSIS_SCHEMA = {
     }
   },
   required: ["title", "judgmentNumber", "courtName", "parties", "proceduralHistory", "facts", "reasons", "ruling", "lawsCited"]
+};
+
+// Rich Text Editor Component
+const RichTextEditor = ({ value, onChange, placeholder }: { value: string, onChange: (val: string) => void, placeholder: string }) => {
+  const editorRef = useRef<HTMLDivElement>(null);
+
+  // Sync initial and external changes to the editor
+  useEffect(() => {
+    if (editorRef.current && editorRef.current.innerHTML !== value) {
+      editorRef.current.innerHTML = value;
+    }
+  }, [value]);
+
+  const execCommand = (command: string, arg?: string) => {
+    document.execCommand(command, false, arg);
+    if (editorRef.current) {
+      onChange(editorRef.current.innerHTML);
+    }
+  };
+
+  return (
+    <div className="rte-container">
+      <div className="rte-toolbar">
+        <button type="button" className="rte-tool" onClick={() => execCommand('bold')} title="Bold">
+          <span className="material-symbols-outlined">format_bold</span>
+        </button>
+        <button type="button" className="rte-tool" onClick={() => execCommand('italic')} title="Italic">
+          <span className="material-symbols-outlined">format_italic</span>
+        </button>
+        <button type="button" className="rte-tool" onClick={() => execCommand('insertUnorderedList')} title="Bullet Points">
+          <span className="material-symbols-outlined">format_list_bulleted</span>
+        </button>
+        <div style={{ flex: 1 }} />
+      </div>
+      <div
+        ref={editorRef}
+        className="rte-editor"
+        contentEditable
+        onInput={(e) => onChange(e.currentTarget.innerHTML)}
+        onPaste={(e) => {
+          // Optional: handle plain text paste if desired, 
+          // but contentEditable handles rich paste by default.
+        }}
+        data-placeholder={placeholder}
+      />
+    </div>
+  );
 };
 
 // UI Components
@@ -320,14 +371,13 @@ const AnalyzeSection = ({ text, setText, onAnalyze, isLoading, result, globalLaw
   <div className="grid-analyze">
     <section className="card">
       <h2 className="card-title"><span className="material-symbols-outlined">description</span> {t('analyze')}</h2>
-      <textarea 
-        className="input-field" 
-        rows={15} 
-        value={text} 
-        onChange={(e) => setText(e.target.value)} 
+      
+      <RichTextEditor
+        value={text}
+        onChange={setText}
         placeholder={t('casePlaceholder')}
-        style={{ marginBottom: '1.5rem' }}
       />
+
       <button className="btn btn-primary" style={{ width: '100%' }} disabled={isLoading || !text.trim()} onClick={onAnalyze}>
         {isLoading ? <span className="spinner"></span> : <><span className="material-symbols-outlined">bolt</span> {t('analyzeBtn')}</>}
       </button>
@@ -569,28 +619,109 @@ const HistorySection = ({ history, onDelete, onUpdate, onBulkDelete, globalLawSt
   );
 };
 
-const RepositorySection = ({ records, globalLawStats, t }: any) => {
+// Helper function to parse legacy judgment text
+const parseLegacyCase = (record: any) => {
+    let text = record.judgment_text || "";
+    // Clean HTML tags and entities
+    text = text.replace(/<br\s*\/?>/gi, '\n')
+               .replace(/&nbsp;/g, ' ')
+               .replace(/<[^>]+>/g, '')
+               // Normalize newlines
+               .replace(/\r\n/g, '\n');
+
+    if (!text.trim() && record.judgment_ruling) {
+        text = `نص الحكم:\n${record.judgment_ruling}`;
+    }
+
+    const findHeaderIndex = (text: string, patterns: RegExp[]) => {
+        for (const p of patterns) {
+            const match = text.match(p);
+            if (match && match.index !== undefined) {
+                 return { index: match.index, length: match[0].length };
+            }
+        }
+        return null;
+    };
+
+    const factsPatterns = [/(?:^|\n)\s*(?:الوقائع|وقائع الدعوى|ملخص الوقائع)\s*[:\-\.]?/];
+    const reasonsPatterns = [/(?:^|\n)\s*(?:الأسباب|أسباب الحكم|تسبيب الحكم|الأسباب والحيثيات)\s*[:\-\.]?/];
+    const rulingPatterns = [/(?:^|\n)\s*(?:نص الحكم|منطوق الحكم|المنطوق)\s*[:\-\.]?/];
+
+    const factsMatch = findHeaderIndex(text, factsPatterns);
+    const reasonsMatch = findHeaderIndex(text, reasonsPatterns);
+    const rulingMatch = findHeaderIndex(text, rulingPatterns);
+
+    const sections = [
+        { type: 'facts', match: factsMatch },
+        { type: 'reasons', match: reasonsMatch },
+        { type: 'ruling', match: rulingMatch }
+    ].filter(s => s.match !== null).sort((a, b) => a.match!.index - b.match!.index);
+
+    const extractContent = (currentType: string) => {
+        const currentSection = sections.find(s => s.type === currentType);
+        if (!currentSection) return "";
+        const start = currentSection.match!.index + currentSection.match!.length;
+        const currentIndex = sections.indexOf(currentSection);
+        const nextSection = sections[currentIndex + 1];
+        const end = nextSection ? nextSection.match!.index : text.length;
+        return text.substring(start, end).trim();
+    };
+
+    const factsText = extractContent('facts');
+    const reasonsText = extractContent('reasons');
+    const rulingText = extractContent('ruling');
+
+    const parties = [];
+    const claimantMatch = text.match(/(?:^|\n)\s*المدعي\s*[:\-\.]([\s\S]*?)(?=(?:^|\n)\s*(?:المدعى عليه|الوقائع))/i);
+    if (claimantMatch) parties.push({ role: 'المدعي', name: claimantMatch[1].trim().split('\n')[0] });
+
+    const defendantMatch = text.match(/(?:^|\n)\s*المدعى عليه\s*[:\-\.]([\s\S]*?)(?=(?:^|\n)\s*(?:الوقائع))/i);
+    if (defendantMatch) parties.push({ role: 'المدعى عليه', name: defendantMatch[1].trim().split('\n')[0] });
+
+    return {
+      title: record.title,
+      judgmentNumber: record.judgment_number || "N/A",
+      courtName: record.judgment_court_name || "N/A",
+      parties: parties,
+      proceduralHistory: "", 
+      facts: factsText || (sections.length === 0 ? text : ""),
+      reasons: reasonsText || "لا توجد أسباب مستخلصة.",
+      ruling: rulingText || record.judgment_ruling || "لا يوجد منطوق حكم مستخلص.",
+      lawsCited: [] 
+    };
+};
+
+const RepositorySection = ({ records, globalLawStats, t, onUseCase }: any) => {
   const [selected, setSelected] = useState<any>(null);
+  const parsedAnalysis = useMemo(() => selected ? parseLegacyCase(selected) : null, [selected]);
   
-  if (selected) return (
+  if (selected && parsedAnalysis) return (
     <div className="container">
       <button className="btn btn-secondary" style={{ marginBottom: '1.5rem' }} onClick={() => setSelected(null)}>
         <span className="material-symbols-outlined">arrow_back</span> {t('back')}
       </button>
       <div className="card">
-        <h2 style={{ color: 'var(--brand-primary)', marginBottom: '1rem' }}>{selected.title}</h2>
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
-          <span className="badge">{selected.judgment_court_name}</span>
-          <span className="badge">{selected.judgment_hijri_date}</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+          <h2 style={{ color: 'var(--brand-primary)', margin: 0 }}>{selected.title}</h2>
+          <button 
+             className="btn btn-primary" 
+             onClick={() => {
+                const cleanText = selected.judgment_text.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '');
+                onUseCase(cleanText);
+             }}
+          >
+             <span className="material-symbols-outlined">auto_awesome</span> {t('analyzeThisCase')}
+          </button>
         </div>
         
-        {globalLawStats && (
-          <div style={{ marginBottom: '2rem' }}>
-             <LegalAnalyticsDashboard globalLawStats={globalLawStats} t={t} />
-          </div>
-        )}
-
-        <div className="legal-content" dangerouslySetInnerHTML={{ __html: selected.judgment_text }}></div>
+        <div className="card" style={{ background: 'var(--brand-primary-soft)', border: 'none', marginBottom: '2rem' }}>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                <span className="material-symbols-outlined" style={{ verticalAlign: 'middle', fontSize: '1.2rem', marginInlineEnd: '0.5rem' }}>info</span>
+                {t('repositoryNotice')}
+            </p>
+        </div>
+        
+        <AnalysisDetails analysis={parsedAnalysis} globalLawStats={globalLawStats} t={t} />
       </div>
     </div>
   );
@@ -669,10 +800,11 @@ const App = () => {
       Extract detailed structured data following the requested schema.
       
       CRITICAL INSTRUCTION FOR 'lawsCited':
-      - Extract every specific law, regulation, or royal decree mentioned.
-      - STRICTLY FORMAT specific article citations as: 'المادة [رقم] من [اسم النظام]' (e.g., 'المادة 76 من نظام المرافعات الشرعية').
+      - Extract every specific law, regulation, circular, or royal decree mentioned in the text.
+      - CITATION FORMATTING: You MUST follow this exact format for article citations: 'المادة [رقم] من [اسم النظام]' (e.g., 'المادة 76 من نظام المرافعات الشرعية').
+      - Do NOT use formats like 'Article [Num] of [Law]' or '[Law], Article [Num]'.
       - NORMALIZE all law names to their official standard Arabic titles.
-      - EXCLUDE general references (e.g., "according to the system", "based on the regulation") if the specific law name is not provided.
+      - EXCLUDE general references (e.g., "according to the system") if the specific law name is not provided.
       
       CRITICAL INSTRUCTION FOR TEXT FIELDS ('facts', 'reasons', 'ruling', 'proceduralHistory'):
       - You MUST use Markdown formatting to improve readability.
@@ -680,7 +812,7 @@ const App = () => {
       - Use bullet points (- ) for listing chronological events, arguments, or evidences.
       - Ensure the text is well-structured and easy to read.
       
-      Legal Judgment Text:
+      Legal Judgment Text (Formatted):
       ${caseText}`;
 
       const response = await ai.models.generateContent({
@@ -727,6 +859,11 @@ const App = () => {
     await putCaseInDB(updatedRecord);
     setHistory(prev => prev.map(h => h.id === id ? updatedRecord : h));
   };
+  
+  const handleUseCase = (text: string) => {
+    setCaseText(text);
+    setActiveTab('analyze');
+  };
 
   return (
     <div className="layout-root">
@@ -759,24 +896,72 @@ const App = () => {
         )}
         
         {activeTab === 'records' && (
-          <RepositorySection records={judicialData} globalLawStats={globalLawStats} t={t} />
+          <RepositorySection 
+             records={judicialData} 
+             globalLawStats={globalLawStats} 
+             t={t} 
+             onUseCase={handleUseCase}
+          />
         )}
         
         {activeTab === 'admin' && (
           <div className="card" style={{ textAlign: 'center', padding: '5rem' }}>
             <span className="material-symbols-outlined" style={{ fontSize: '5rem', color: 'var(--brand-primary)', opacity: 0.1 }}>dashboard_customize</span>
             <h2 style={{ marginTop: '1rem' }}>{t('admin')}</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem', marginTop: '2rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '2rem', marginTop: '2rem' }}>
                <div className="card">
-                 <h4>{t('topCitedLaws')}</h4>
-                 <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {Object.entries(globalLawStats).sort((a: any, b: any) => b[1] - a[1]).slice(0, 5).map(([law, count]: any, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem', background: 'var(--bg-surface-alt)', borderRadius: 'var(--radius-sm)' }}>
-                        <span style={{ fontSize: '0.9rem' }}>{law}</span>
-                        <span className="badge badge-success">{count}</span>
-                      </div>
-                    ))}
-                 </div>
+                 <h4 style={{marginBottom: '1.5rem'}}>{t('topCitedLaws')}</h4>
+                 {Object.keys(globalLawStats).length > 0 ? (
+                    <div style={{ height: '300px', position: 'relative' }}>
+                      <Bar 
+                        data={{
+                          labels: Object.entries(globalLawStats)
+                            .sort((a: any, b: any) => b[1] - a[1])
+                            .slice(0, 10)
+                            .map(([law]) => law.length > 30 ? law.substring(0, 30) + '...' : law),
+                          datasets: [{
+                            label: t('citationCount'),
+                            data: Object.entries(globalLawStats)
+                                  .sort((a: any, b: any) => b[1] - a[1])
+                                  .slice(0, 10)
+                                  .map(([, count]) => count),
+                            backgroundColor: 'rgba(30, 64, 175, 0.6)',
+                            borderColor: 'rgba(30, 64, 175, 1)',
+                            borderWidth: 1,
+                            borderRadius: 4
+                          }]
+                        }}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          indexAxis: 'y',
+                          plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                              callbacks: {
+                                title: (items: any) => {
+                                   const idx = items[0].dataIndex;
+                                   const laws = Object.entries(globalLawStats)
+                                      .sort((a: any, b: any) => b[1] - a[1])
+                                      .slice(0, 10);
+                                   return laws[idx][0];
+                                }
+                              }
+                            }
+                          },
+                          scales: {
+                            x: { beginAtZero: true, grid: { color: 'var(--border-subtle)' }, ticks: { stepSize: 1 } },
+                            y: { grid: { display: false } }
+                          }
+                        }}
+                      />
+                    </div>
+                 ) : (
+                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: '3rem', opacity: 0.3 }}>bar_chart</span>
+                      <p style={{ marginTop: '1rem' }}>{t('noHistory')}</p>
+                   </div>
+                 )}
                </div>
             </div>
           </div>

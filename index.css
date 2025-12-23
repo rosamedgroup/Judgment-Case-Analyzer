@@ -223,6 +223,68 @@ html[dir="rtl"] body { font-family: var(--font-ar); }
   box-shadow: 0 0 0 4px var(--brand-primary-soft);
 }
 
+/* Rich Text Editor Styles */
+.rte-container {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.rte-container:focus-within {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 4px var(--brand-primary-soft);
+}
+
+.rte-toolbar {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  background: var(--bg-surface-alt);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.rte-tool {
+  background: transparent;
+  border: none;
+  padding: 0.4rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition);
+}
+
+.rte-tool:hover {
+  background: var(--border-subtle);
+  color: var(--brand-primary);
+}
+
+.rte-editor {
+  padding: 1.25rem;
+  min-height: 350px;
+  max-height: 600px;
+  overflow-y: auto;
+  outline: none;
+  font-family: inherit;
+  line-height: 1.8;
+  position: relative;
+}
+
+/* Placeholder support for contentEditable */
+.rte-editor:empty:before {
+  content: attr(data-placeholder);
+  color: var(--text-muted);
+  pointer-events: none;
+  display: block;
+}
+
 /* Grids */
 .grid-analyze {
   display: grid;
