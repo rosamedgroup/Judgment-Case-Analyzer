@@ -98,7 +98,9 @@ const translations: any = {
     selectedCount: (n: number) => `${n} محدد`,
     citationCount: "عدد مرات الاستشهاد",
     analyzeThisCase: "تحليل هذه القضية بالذكاء الاصطناعي",
-    repositoryNotice: "هذه البيانات مستخرجة من السجلات العامة. للحصول على تحليل قانوني متعمق (مثل استخراج المواد النظامية وتلخيص دقيق)، استخدم زر التحليل بالذكاء الاصطناعي."
+    repositoryNotice: "هذه البيانات مستخرجة من السجلات العامة. للحصول على تحليل قانوني متعمق (مثل استخراج المواد النظامية وتلخيص دقيق)، استخدم زر التحليل بالذكاء الاصطناعي.",
+    originalText: "النص الأصلي",
+    structuredView: "التحليل المهيكل"
   },
   en: {
     appTitle: "Smart Judicial Analyzer",
@@ -137,7 +139,9 @@ const translations: any = {
     selectedCount: (n: number) => `${n} selected`,
     citationCount: "Citation Count",
     analyzeThisCase: "Analyze this case with AI",
-    repositoryNotice: "These data are from public records. For in-depth legal analysis (e.g. extracting statutes and precise summary), use the AI Analysis button."
+    repositoryNotice: "These data are from public records. For in-depth legal analysis (e.g. extracting statutes and precise summary), use the AI Analysis button.",
+    originalText: "Original Text",
+    structuredView: "Structured View"
   }
 };
 
@@ -472,9 +476,13 @@ const HistorySection = ({ history, onDelete, onUpdate, onBulkDelete, globalLawSt
   const handleBulkDeleteClick = () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
-    onBulkDelete(ids);
-    setIsSelectionMode(false);
-    setSelectedIds(new Set());
+    
+    // UI logic: confirm here to prevent clearing selection if cancelled
+    if (window.confirm(t('confirmBulkDelete'))) {
+        onBulkDelete(ids);
+        setIsSelectionMode(false);
+        setSelectedIds(new Set());
+    }
   };
 
   if (selected) {
@@ -626,26 +634,36 @@ const parseLegacyCase = (record: any) => {
     text = text.replace(/<br\s*\/?>/gi, '\n')
                .replace(/&nbsp;/g, ' ')
                .replace(/<[^>]+>/g, '')
-               // Normalize newlines
-               .replace(/\r\n/g, '\n');
+               // Normalize newlines and ensure unified spacing
+               .replace(/\r\n/g, '\n')
+               .replace(/\n{2,}/g, '\n');
 
     if (!text.trim() && record.judgment_ruling) {
         text = `نص الحكم:\n${record.judgment_ruling}`;
     }
 
     const findHeaderIndex = (text: string, patterns: RegExp[]) => {
+        let bestMatch = null;
         for (const p of patterns) {
             const match = text.match(p);
             if (match && match.index !== undefined) {
-                 return { index: match.index, length: match[0].length };
+                 if (!bestMatch || match.index < bestMatch.index) {
+                     bestMatch = { index: match.index, length: match[0].length };
+                 }
             }
         }
-        return null;
+        return bestMatch;
     };
 
-    const factsPatterns = [/(?:^|\n)\s*(?:الوقائع|وقائع الدعوى|ملخص الوقائع)\s*[:\-\.]?/];
-    const reasonsPatterns = [/(?:^|\n)\s*(?:الأسباب|أسباب الحكم|تسبيب الحكم|الأسباب والحيثيات)\s*[:\-\.]?/];
-    const rulingPatterns = [/(?:^|\n)\s*(?:نص الحكم|منطوق الحكم|المنطوق)\s*[:\-\.]?/];
+    const factsPatterns = [
+        /(?:^|\n)\s*(?:الوقائع|وقائع الدعوى|ملخص الوقائع|واقعات الدعوى|موجز الوقائع|بيان الدعوى|تتحصل وقائع هذه الدعوى|تتلخص وقائع هذه الدعوى)\s*[:\-\.]?/i
+    ];
+    const reasonsPatterns = [
+        /(?:^|\n)\s*(?:الأسباب|أسباب الحكم|تسبيب الحكم|الأسباب والحيثيات|حيثيات الحكم|الموضوع|بناء على ما تقدم|تأسيس الحكم|وعليه)\s*[:\-\.]?/i
+    ];
+    const rulingPatterns = [
+        /(?:^|\n)\s*(?:نص الحكم|منطوق الحكم|المنطوق|الحكم|حكمت الدائرة|منطوق|قررت الدائرة|وبه تقضي)\s*[:\-\.]?/i
+    ];
 
     const factsMatch = findHeaderIndex(text, factsPatterns);
     const reasonsMatch = findHeaderIndex(text, reasonsPatterns);
@@ -659,7 +677,14 @@ const parseLegacyCase = (record: any) => {
 
     const extractContent = (currentType: string) => {
         const currentSection = sections.find(s => s.type === currentType);
-        if (!currentSection) return "";
+        if (!currentSection) {
+            if (currentType === 'facts' && sections.length > 0 && sections[0].type !== 'facts') {
+                 // Fallback can be implemented here if needed
+                 return "";
+            }
+            return "";
+        }
+
         const start = currentSection.match!.index + currentSection.match!.length;
         const currentIndex = sections.indexOf(currentSection);
         const nextSection = sections[currentIndex + 1];
@@ -667,28 +692,98 @@ const parseLegacyCase = (record: any) => {
         return text.substring(start, end).trim();
     };
 
-    const factsText = extractContent('facts');
-    const reasonsText = extractContent('reasons');
-    const rulingText = extractContent('ruling');
+    let factsText = extractContent('facts');
+    let reasonsText = extractContent('reasons');
+    let rulingText = extractContent('ruling');
+    
+    // Fallback: If no headers found at all, put everything in facts
+    if (sections.length === 0) {
+        factsText = text;
+    }
 
     const parties = [];
-    const claimantMatch = text.match(/(?:^|\n)\s*المدعي\s*[:\-\.]([\s\S]*?)(?=(?:^|\n)\s*(?:المدعى عليه|الوقائع))/i);
+    const claimantMatch = text.match(/(?:^|\n)\s*(?:المدعي|المدعية|المتظلم|المدمي|صاحب الدعوى)\s*[:\-\.]([\s\S]*?)(?=(?:^|\n)\s*(?:المدعى عليه|المدعى عليها|الوقائع))/i);
     if (claimantMatch) parties.push({ role: 'المدعي', name: claimantMatch[1].trim().split('\n')[0] });
 
-    const defendantMatch = text.match(/(?:^|\n)\s*المدعى عليه\s*[:\-\.]([\s\S]*?)(?=(?:^|\n)\s*(?:الوقائع))/i);
+    const defendantMatch = text.match(/(?:^|\n)\s*(?:المدعى عليه|المدعى عليها|ضد|في مواجهة)\s*[:\-\.]([\s\S]*?)(?=(?:^|\n)\s*(?:الوقائع|أسباب))/i);
     if (defendantMatch) parties.push({ role: 'المدعى عليه', name: defendantMatch[1].trim().split('\n')[0] });
 
     return {
       title: record.title,
       judgmentNumber: record.judgment_number || "N/A",
       courtName: record.judgment_court_name || "N/A",
-      parties: parties,
+      parties: parties.length ? parties : [{ role: "أطراف", name: "غير محدد" }],
       proceduralHistory: "", 
-      facts: factsText || (sections.length === 0 ? text : ""),
+      facts: factsText || (sections.length === 0 ? text : "لم يتم استخلاص الوقائع تلقائياً."),
       reasons: reasonsText || "لا توجد أسباب مستخلصة.",
       ruling: rulingText || record.judgment_ruling || "لا يوجد منطوق حكم مستخلص.",
       lawsCited: [] 
     };
+};
+
+const RepositoryDetailView = ({ selected, parsedAnalysis, globalLawStats, t, onUseCase, onBack }: any) => {
+  const [viewMode, setViewMode] = useState<'analysis' | 'original'>('analysis');
+
+  const displayOriginalText = useMemo(() => {
+    return (selected.judgment_text || selected.judgment_ruling || "")
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/<[^>]+>/g, '');
+  }, [selected]);
+
+  return (
+    <div className="container">
+      <button className="btn btn-secondary" style={{ marginBottom: '1.5rem' }} onClick={onBack}>
+        <span className="material-symbols-outlined">arrow_back</span> {t('back')}
+      </button>
+      <div className="card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+          <h2 style={{ color: 'var(--brand-primary)', margin: 0 }}>{selected.title}</h2>
+          <button 
+             className="btn btn-primary" 
+             onClick={() => onUseCase(displayOriginalText)}
+          >
+             <span className="material-symbols-outlined">auto_awesome</span> {t('analyzeThisCase')}
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
+           <button 
+             className={`btn ${viewMode === 'analysis' ? 'btn-primary' : 'btn-secondary'}`}
+             onClick={() => setViewMode('analysis')}
+             style={{ borderRadius: '2rem', padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+           >
+              <span className="material-symbols-outlined">segment</span> {t('structuredView')}
+           </button>
+           <button 
+             className={`btn ${viewMode === 'original' ? 'btn-primary' : 'btn-secondary'}`}
+             onClick={() => setViewMode('original')}
+             style={{ borderRadius: '2rem', padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+           >
+              <span className="material-symbols-outlined">description</span> {t('originalText')}
+           </button>
+        </div>
+        
+        {viewMode === 'analysis' ? (
+           <>
+              <div className="card" style={{ background: 'var(--brand-primary-soft)', border: 'none', marginBottom: '2rem' }}>
+                  <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                      <span className="material-symbols-outlined" style={{ verticalAlign: 'middle', fontSize: '1.2rem', marginInlineEnd: '0.5rem' }}>info</span>
+                      {t('repositoryNotice')}
+                  </p>
+              </div>
+              <AnalysisDetails analysis={parsedAnalysis} globalLawStats={globalLawStats} t={t} />
+           </>
+        ) : (
+           <div style={{ background: 'var(--bg-surface-alt)', padding: '1.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+              <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-ar)', fontSize: '1rem', lineHeight: '1.8', color: 'var(--text-primary)' }}>
+                {displayOriginalText}
+              </pre>
+           </div>
+        )}
+      </div>
+    </div>
+  );
 };
 
 const RepositorySection = ({ records, globalLawStats, t, onUseCase }: any) => {
@@ -696,34 +791,14 @@ const RepositorySection = ({ records, globalLawStats, t, onUseCase }: any) => {
   const parsedAnalysis = useMemo(() => selected ? parseLegacyCase(selected) : null, [selected]);
   
   if (selected && parsedAnalysis) return (
-    <div className="container">
-      <button className="btn btn-secondary" style={{ marginBottom: '1.5rem' }} onClick={() => setSelected(null)}>
-        <span className="material-symbols-outlined">arrow_back</span> {t('back')}
-      </button>
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
-          <h2 style={{ color: 'var(--brand-primary)', margin: 0 }}>{selected.title}</h2>
-          <button 
-             className="btn btn-primary" 
-             onClick={() => {
-                const cleanText = selected.judgment_text.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '');
-                onUseCase(cleanText);
-             }}
-          >
-             <span className="material-symbols-outlined">auto_awesome</span> {t('analyzeThisCase')}
-          </button>
-        </div>
-        
-        <div className="card" style={{ background: 'var(--brand-primary-soft)', border: 'none', marginBottom: '2rem' }}>
-            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                <span className="material-symbols-outlined" style={{ verticalAlign: 'middle', fontSize: '1.2rem', marginInlineEnd: '0.5rem' }}>info</span>
-                {t('repositoryNotice')}
-            </p>
-        </div>
-        
-        <AnalysisDetails analysis={parsedAnalysis} globalLawStats={globalLawStats} t={t} />
-      </div>
-    </div>
+    <RepositoryDetailView 
+      selected={selected}
+      parsedAnalysis={parsedAnalysis}
+      globalLawStats={globalLawStats}
+      t={t}
+      onUseCase={onUseCase}
+      onBack={() => setSelected(null)}
+    />
   );
 
   return (
@@ -844,12 +919,11 @@ const App = () => {
   };
   
   const handleBulkDelete = async (ids: number[]) => {
-    if (window.confirm(translations[lang].confirmBulkDelete)) {
-      for (const id of ids) {
+    // Confirmation is now handled in the UI (HistorySection) before calling this
+    for (const id of ids) {
         await deleteCaseFromDB(id);
-      }
-      setHistory(prev => prev.filter(h => !ids.includes(h.id)));
     }
+    setHistory(prev => prev.filter(h => !ids.includes(h.id)));
   };
 
   const handleUpdate = async (id: number, newTitle: string) => {
