@@ -119,7 +119,15 @@ const translations: any = {
     statusCompleted: "مكتمل",
     statusFailed: "فشل",
     viewInHistory: "عرض في السجل",
-    noContent: "لا يوجد محتوى نصي"
+    noContent: "لا يوجد محتوى نصي",
+    save: "حفظ",
+    editTitle: "تعديل العنوان",
+    removeFromQueue: "إزالة من القائمة",
+    toggleTheme: "تبديل المظهر",
+    switchLanguage: "تغيير اللغة",
+    bold: "غامق",
+    italic: "مائل",
+    bulletPoints: "قائمة نقطية"
   },
   en: {
     appTitle: "Smart Judicial Analyzer",
@@ -179,7 +187,15 @@ const translations: any = {
     statusCompleted: "Completed",
     statusFailed: "Failed",
     viewInHistory: "View in History",
-    noContent: "No text content available"
+    noContent: "No text content available",
+    save: "Save",
+    editTitle: "Edit Title",
+    removeFromQueue: "Remove from Queue",
+    toggleTheme: "Toggle Theme",
+    switchLanguage: "Switch Language",
+    bold: "Bold",
+    italic: "Italic",
+    bulletPoints: "Bullet Points"
   }
 };
 
@@ -218,7 +234,7 @@ const ANALYSIS_SCHEMA = {
 };
 
 // Rich Text Editor Component
-const RichTextEditor = ({ value, onChange, placeholder }: { value: string, onChange: (val: string) => void, placeholder: string }) => {
+const RichTextEditor = ({ value, onChange, placeholder, t }: { value: string, onChange: (val: string) => void, placeholder: string, t?: (k:string) => string }) => {
   const editorRef = useRef<HTMLDivElement>(null);
 
   // Sync initial and external changes to the editor
@@ -235,16 +251,18 @@ const RichTextEditor = ({ value, onChange, placeholder }: { value: string, onCha
     }
   };
 
+  const getTitle = (key: string, defaultText: string) => t ? t(key) : defaultText;
+
   return (
     <div className="rte-container">
       <div className="rte-toolbar">
-        <button type="button" className="rte-tool" onClick={() => execCommand('bold')} title="Bold">
+        <button type="button" className="rte-tool" onClick={() => execCommand('bold')} title={getTitle('bold', 'Bold')}>
           <span className="material-symbols-outlined">format_bold</span>
         </button>
-        <button type="button" className="rte-tool" onClick={() => execCommand('italic')} title="Italic">
+        <button type="button" className="rte-tool" onClick={() => execCommand('italic')} title={getTitle('italic', 'Italic')}>
           <span className="material-symbols-outlined">format_italic</span>
         </button>
-        <button type="button" className="rte-tool" onClick={() => execCommand('insertUnorderedList')} title="Bullet Points">
+        <button type="button" className="rte-tool" onClick={() => execCommand('insertUnorderedList')} title={getTitle('bulletPoints', 'Bullet Points')}>
           <span className="material-symbols-outlined">format_list_bulleted</span>
         </button>
         <div style={{ flex: 1 }} />
@@ -272,10 +290,10 @@ const Header = ({ lang, setLang, theme, toggleTheme, t }: any) => (
       {t('appTitle')}
     </h1>
     <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-      <button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem' }} onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}>
+      <button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem' }} onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')} title={t('switchLanguage')}>
         {lang === 'ar' ? 'English' : 'العربية'}
       </button>
-      <button className="btn btn-secondary" style={{ padding: '0.4rem' }} onClick={toggleTheme}>
+      <button className="btn btn-secondary" style={{ padding: '0.4rem' }} onClick={toggleTheme} title={t('toggleTheme')}>
         <span className="material-symbols-outlined">{theme === 'light' ? 'dark_mode' : 'light_mode'}</span>
       </button>
     </div>
@@ -284,16 +302,16 @@ const Header = ({ lang, setLang, theme, toggleTheme, t }: any) => (
 
 const Navigation = ({ activeTab, setActiveTab, t }: any) => (
   <nav className="navigation-bar">
-    <button className={`nav-link ${activeTab === 'analyze' ? 'active' : ''}`} onClick={() => setActiveTab('analyze')}>
+    <button className={`nav-link ${activeTab === 'analyze' ? 'active' : ''}`} onClick={() => setActiveTab('analyze')} title={t('analyze')}>
       <span className="material-symbols-outlined">auto_awesome</span> {t('analyze')}
     </button>
-    <button className={`nav-link ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
+    <button className={`nav-link ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')} title={t('history')}>
       <span className="material-symbols-outlined">history</span> {t('history')}
     </button>
-    <button className={`nav-link ${activeTab === 'records' ? 'active' : ''}`} onClick={() => setActiveTab('records')}>
+    <button className={`nav-link ${activeTab === 'records' ? 'active' : ''}`} onClick={() => setActiveTab('records')} title={t('repository')}>
       <span className="material-symbols-outlined">inventory_2</span> {t('repository')}
     </button>
-    <button className={`nav-link ${activeTab === 'admin' ? 'active' : ''}`} onClick={() => setActiveTab('admin')}>
+    <button className={`nav-link ${activeTab === 'admin' ? 'active' : ''}`} onClick={() => setActiveTab('admin')} title={t('admin')}>
       <span className="material-symbols-outlined">dashboard</span> {t('admin')}
     </button>
   </nav>
@@ -528,6 +546,7 @@ const AnalyzeSection = ({ text, setText, onAnalyze, isLoading, result, globalLaw
                   className={`btn ${mode === 'single' ? 'btn-primary' : ''}`}
                   style={{ padding: '0.4rem 1rem', fontSize: '0.85rem', borderRadius: '1.5rem', background: mode === 'single' ? 'var(--brand-primary)' : 'transparent', color: mode === 'single' ? '#fff' : 'var(--text-secondary)' }}
                   onClick={() => setMode('single')}
+                  title={t('singleCase')}
                 >
                     {t('singleCase')}
                 </button>
@@ -535,6 +554,7 @@ const AnalyzeSection = ({ text, setText, onAnalyze, isLoading, result, globalLaw
                   className={`btn ${mode === 'batch' ? 'btn-primary' : ''}`}
                   style={{ padding: '0.4rem 1rem', fontSize: '0.85rem', borderRadius: '1.5rem', background: mode === 'batch' ? 'var(--brand-primary)' : 'transparent', color: mode === 'batch' ? '#fff' : 'var(--text-secondary)' }}
                   onClick={() => setMode('batch')}
+                  title={t('batchMode')}
                 >
                     {t('batchMode')}
                 </button>
@@ -547,6 +567,7 @@ const AnalyzeSection = ({ text, setText, onAnalyze, isLoading, result, globalLaw
                     value={text}
                     onChange={setText}
                     placeholder={t('casePlaceholder')}
+                    t={t}
                 />
 
                 <button className="btn btn-primary" style={{ width: '100%' }} disabled={isLoading || !text.trim()} onClick={onAnalyze}>
@@ -576,6 +597,7 @@ const AnalyzeSection = ({ text, setText, onAnalyze, isLoading, result, globalLaw
                         value={text}
                         onChange={setText}
                         placeholder={t('casePlaceholder')}
+                        t={t}
                      />
                      <button 
                         className="btn btn-secondary" 
@@ -611,7 +633,7 @@ const AnalyzeSection = ({ text, setText, onAnalyze, isLoading, result, globalLaw
                                         <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t(`status${item.status.charAt(0).toUpperCase() + item.status.slice(1)}`)}</p>
                                     </div>
                                     {item.status === 'pending' && (
-                                        <button className="btn btn-secondary" style={{ padding: '0.25rem' }} onClick={() => removeFromQueue(item.id)}>
+                                        <button className="btn btn-secondary" style={{ padding: '0.25rem' }} onClick={() => removeFromQueue(item.id)} title={t('removeFromQueue')}>
                                             <span className="material-symbols-outlined" style={{ fontSize: '1.2rem', color: 'var(--status-error)' }}>close</span>
                                         </button>
                                     )}
@@ -766,10 +788,10 @@ const HistorySection = ({ history, onDelete, onUpdate, onBulkDelete, globalLawSt
                   onKeyDown={(e) => e.key === 'Enter' && handleSave()}
                   autoFocus
                 />
-                <button className="btn btn-primary" onClick={handleSave}>
+                <button className="btn btn-primary" onClick={handleSave} title={t('save')}>
                   <span className="material-symbols-outlined">check</span>
                 </button>
-                <button className="btn btn-secondary" onClick={() => setIsEditing(false)}>
+                <button className="btn btn-secondary" onClick={() => setIsEditing(false)} title={t('cancel')}>
                   <span className="material-symbols-outlined">close</span>
                 </button>
              </div>
@@ -780,7 +802,7 @@ const HistorySection = ({ history, onDelete, onUpdate, onBulkDelete, globalLawSt
                   className="btn btn-secondary" 
                   style={{ padding: '0.4rem', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} 
                   onClick={() => { setEditTitle(selected.analysis.title); setIsEditing(true); }}
-                  title="Edit Title"
+                  title={t('editTitle')}
                >
                   <span className="material-symbols-outlined" style={{ fontSize: '1.2rem' }}>edit</span>
                </button>
@@ -812,6 +834,7 @@ const HistorySection = ({ history, onDelete, onUpdate, onBulkDelete, globalLawSt
                   onClick={handleBulkDeleteClick}
                   disabled={selectedIds.size === 0 || isProcessing}
                   style={{ color: 'var(--status-error)' }}
+                  title={t('deleteSelected')}
                 >
                   <span className="material-symbols-outlined">delete</span> {t('deleteSelected')}
                 </button>
@@ -822,7 +845,7 @@ const HistorySection = ({ history, onDelete, onUpdate, onBulkDelete, globalLawSt
                 >
                   <span className="material-symbols-outlined">download</span> {t('exportSelected')}
                 </button>
-                <button className="btn btn-secondary" onClick={toggleSelectionMode} disabled={isProcessing}>
+                <button className="btn btn-secondary" onClick={toggleSelectionMode} disabled={isProcessing} title={t('cancel')}>
                   {t('cancel')}
                 </button>
               </>
@@ -921,7 +944,7 @@ const HistorySection = ({ history, onDelete, onUpdate, onBulkDelete, globalLawSt
                       </div>
                     </div>
                     {!isSelectionMode && (
-                      <button className="btn btn-secondary" style={{ color: 'var(--status-error)', padding: '0.5rem' }} onClick={(e) => { e.stopPropagation(); onDelete(rec.id); }}>
+                      <button className="btn btn-secondary" style={{ color: 'var(--status-error)', padding: '0.5rem' }} onClick={(e) => { e.stopPropagation(); onDelete(rec.id); }} title={t('delete')}>
                         <span className="material-symbols-outlined">delete</span>
                       </button>
                     )}
@@ -937,11 +960,23 @@ const HistorySection = ({ history, onDelete, onUpdate, onBulkDelete, globalLawSt
 };
 
 const RepositoryDetailView = ({ record, onBack, onUseCase, t }: any) => {
-  const textContent = record.judgment_text ? record.judgment_text.replace(/<br \/>/g, '\n') : '';
+  // Function to clean HTML for display
+  const getCleanHtml = (html: string) => {
+    if (!html) return '';
+    // Remove style attributes to ensure consistency with app theme and fix "messy" copy-paste
+    return html
+        .replace(/ style="[^"]*"/gi, '')
+        .replace(/ style='[^']*'/gi, '')
+        .replace(/ class="[^"]*"/gi, '')
+        .replace(/ class='[^']*'/gi, '')
+        .replace(/ id="docs-internal-[^"]*"/gi, ''); // Specifically clean Google Docs artifacts
+  };
+
+  const htmlContent = useMemo(() => getCleanHtml(record.judgment_text), [record.judgment_text]);
   
   return (
     <div className="container">
-      <button className="btn btn-secondary" style={{ marginBottom: '1.5rem' }} onClick={onBack}>
+      <button className="btn btn-secondary" style={{ marginBottom: '1.5rem' }} onClick={onBack} title={t('back')}>
         <span className="material-symbols-outlined">arrow_back</span> {t('back')}
       </button>
 
@@ -963,24 +998,27 @@ const RepositoryDetailView = ({ record, onBack, onUseCase, t }: any) => {
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
            <h2 className="card-title" style={{ margin: 0 }}>{record.title || t('originalText')}</h2>
-           <button className="btn btn-primary" onClick={() => onUseCase(textContent)}>
+           <button className="btn btn-primary" onClick={() => onUseCase(record.judgment_text)}>
               <span className="material-symbols-outlined">bolt</span> {t('analyzeThisCase')}
            </button>
         </div>
         
-        <div style={{ 
-            background: 'var(--bg-surface-alt)', 
-            padding: '1.5rem', 
-            borderRadius: 'var(--radius-sm)', 
-            lineHeight: '1.8', 
-            whiteSpace: 'pre-wrap',
-            fontFamily: 'var(--font-ar)',
-            border: '1px solid var(--border-subtle)',
-            maxHeight: '70vh',
-            overflowY: 'auto'
-        }}>
-           {textContent}
-        </div>
+        <div 
+            className="judgment-text-content"
+            style={{ 
+                background: 'var(--bg-surface-alt)', 
+                padding: '1.5rem', 
+                borderRadius: 'var(--radius-sm)', 
+                lineHeight: '1.8', 
+                fontFamily: 'var(--font-ar)',
+                border: '1px solid var(--border-subtle)',
+                maxHeight: '70vh',
+                overflowY: 'auto',
+                overflowWrap: 'break-word',
+                fontSize: '1rem'
+            }}
+            dangerouslySetInnerHTML={{ __html: htmlContent }}
+        />
         
         <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'var(--brand-primary-soft)', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', display: 'flex', gap: '0.5rem' }}>
            <span className="material-symbols-outlined" style={{ color: 'var(--brand-primary)' }}>info</span>
