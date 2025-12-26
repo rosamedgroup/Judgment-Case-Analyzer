@@ -100,7 +100,23 @@ const translations: any = {
     analyzeThisCase: "تحليل هذه القضية بالذكاء الاصطناعي",
     repositoryNotice: "هذه البيانات مستخرجة من السجلات العامة. للحصول على تحليل قانوني متعمق (مثل استخراج المواد النظامية وتلخيص دقيق)، استخدم زر التحليل بالذكاء الاصطناعي.",
     originalText: "النص الأصلي",
-    structuredView: "التحليل المهيكل"
+    structuredView: "التحليل المهيكل",
+    processing: "جاري المعالجة...",
+    batchMode: "تحليل بالجملة",
+    singleCase: "قضية واحدة",
+    caseTitleOptional: "عنوان القضية (اختياري)",
+    addToQueue: "إضافة للقائمة",
+    queueEmpty: "القائمة فارغة. أضف قضايا للبدء.",
+    analyzeQueue: "تحليل الكل",
+    queue: "قائمة الانتظار",
+    itemsInQueue: (n: number) => `${n} عناصر في القائمة`,
+    clearQueue: "مسح القائمة",
+    statusPending: "انتظار",
+    statusProcessing: "معالجة",
+    statusCompleted: "مكتمل",
+    statusFailed: "فشل",
+    viewInHistory: "عرض في السجل",
+    noContent: "لا يوجد محتوى نصي"
   },
   en: {
     appTitle: "Smart Judicial Analyzer",
@@ -141,7 +157,23 @@ const translations: any = {
     analyzeThisCase: "Analyze this case with AI",
     repositoryNotice: "These data are from public records. For in-depth legal analysis (e.g. extracting statutes and precise summary), use the AI Analysis button.",
     originalText: "Original Text",
-    structuredView: "Structured View"
+    structuredView: "Structured View",
+    processing: "Processing...",
+    batchMode: "Batch Analysis",
+    singleCase: "Single Case",
+    caseTitleOptional: "Case Title (Optional)",
+    addToQueue: "Add to Queue",
+    queueEmpty: "Queue is empty. Add cases to start.",
+    analyzeQueue: "Analyze All",
+    queue: "Queue",
+    itemsInQueue: (n: number) => `${n} items in queue`,
+    clearQueue: "Clear Queue",
+    statusPending: "Pending",
+    statusProcessing: "Processing",
+    statusCompleted: "Completed",
+    statusFailed: "Failed",
+    viewInHistory: "View in History",
+    noContent: "No text content available"
   }
 };
 
@@ -371,52 +403,242 @@ const AnalysisDetails = ({ analysis, globalLawStats, t }: any) => (
   </div>
 );
 
-const AnalyzeSection = ({ text, setText, onAnalyze, isLoading, result, globalLawStats, t }: any) => (
-  <div className="grid-analyze">
-    <section className="card">
-      <h2 className="card-title"><span className="material-symbols-outlined">description</span> {t('analyze')}</h2>
-      
-      <RichTextEditor
-        value={text}
-        onChange={setText}
-        placeholder={t('casePlaceholder')}
-      />
+type AnalyzeSectionProps = {
+    text: string;
+    setText: (t: string) => void;
+    onAnalyze: () => void;
+    isLoading: boolean;
+    result: any;
+    globalLawStats: any;
+    t: (k: string) => any;
+    processAnalysis: (text: string, title?: string) => Promise<any>;
+};
 
-      <button className="btn btn-primary" style={{ width: '100%' }} disabled={isLoading || !text.trim()} onClick={onAnalyze}>
-        {isLoading ? <span className="spinner"></span> : <><span className="material-symbols-outlined">bolt</span> {t('analyzeBtn')}</>}
-      </button>
+const AnalyzeSection = ({ text, setText, onAnalyze, isLoading, result, globalLawStats, t, processAnalysis }: AnalyzeSectionProps) => {
+  const [mode, setMode] = useState<'single' | 'batch'>('single');
+  const [queue, setQueue] = useState<any[]>([]);
+  const [batchTitle, setBatchTitle] = useState('');
+  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
 
-      {result && (
-        <div style={{ marginTop: '2.5rem', borderTop: '2px solid var(--border-subtle)', paddingTop: '2rem' }}>
-          <h2 className="card-title">{result.analysis.title}</h2>
-          <AnalysisDetails analysis={result.analysis} globalLawStats={globalLawStats} t={t} />
-        </div>
-      )}
-    </section>
+  const addToQueue = () => {
+    if (!text.trim()) return;
+    const newItem = {
+        id: Date.now(),
+        title: batchTitle.trim() || `${t('singleCase')} #${queue.length + 1}`,
+        text: text,
+        status: 'pending', // pending, processing, completed, failed
+        result: null
+    };
+    setQueue(prev => [...prev, newItem]);
+    setText('');
+    setBatchTitle('');
+  };
+
+  const removeFromQueue = (id: number) => {
+    setQueue(prev => prev.filter(item => item.id !== id));
+  };
+
+  const runBatch = async () => {
+    setIsBatchProcessing(true);
+    const newQueue = [...queue];
     
-    <section>
-      <div className="card" style={{ background: 'var(--brand-primary-soft)', border: 'none', marginBottom: '1.5rem' }}>
-        <h3 style={{ marginBottom: '0.5rem', color: 'var(--brand-primary)' }}>نصيحة قانونية ذكية</h3>
-        <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>قم بنسخ الحكم القضائي كاملاً لضمان دقة استخراج الوقائع والحيثيات. النظام يدعم الأحكام الصادرة من المحاكم التجارية والعامة والإدارية.</p>
-      </div>
-      <div className="card">
-        <h3 style={{ marginBottom: '1rem' }}>كيف يعمل المحلل؟</h3>
-        <ul style={{ paddingInlineStart: '1.25rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-          <li style={{ marginBottom: '0.5rem' }}>استخراج البيانات الهيكلية (الرقم، التاريخ، المحكمة).</li>
-          <li style={{ marginBottom: '0.5rem' }}>تحليل الأطراف المشاركة وأدوارهم القانونية.</li>
-          <li style={{ marginBottom: '0.5rem' }}>تتبع التاريخ الإجرائي للدعوى وجلساتها.</li>
-          <li style={{ marginBottom: '0.5rem' }}>تلخيص وقائع الدعوى بشكل منطقي باستخدام تنسيق غني.</li>
-          <li>استنباط الأسباب الشرعية والنظامية والقوانين المستشهد بها.</li>
-        </ul>
-      </div>
-    </section>
-  </div>
-);
+    for (let i = 0; i < newQueue.length; i++) {
+        if (newQueue[i].status === 'completed') continue;
+        
+        // Update status to processing
+        newQueue[i].status = 'processing';
+        setQueue([...newQueue]);
 
-const HistorySection = ({ history, onDelete, onUpdate, onBulkDelete, globalLawStats, t, locale }: any) => {
+        try {
+            const res = await processAnalysis(newQueue[i].text, newQueue[i].title);
+            newQueue[i].status = 'completed';
+            newQueue[i].result = res;
+        } catch (e) {
+            console.error(e);
+            newQueue[i].status = 'failed';
+        }
+        setQueue([...newQueue]);
+        // Small delay to prevent rate limits
+        await new Promise(r => setTimeout(r, 1000));
+    }
+    setIsBatchProcessing(false);
+  };
+
+  const getStatusIcon = (status: string) => {
+     switch(status) {
+         case 'pending': return 'hourglass_empty';
+         case 'processing': return 'sync';
+         case 'completed': return 'check_circle';
+         case 'failed': return 'error';
+         default: return 'circle';
+     }
+  };
+
+  const getStatusColor = (status: string) => {
+     switch(status) {
+         case 'pending': return 'var(--text-muted)';
+         case 'processing': return 'var(--brand-primary)';
+         case 'completed': return 'var(--status-success)';
+         case 'failed': return 'var(--status-error)';
+         default: return 'var(--text-muted)';
+     }
+  };
+
+  return (
+    <div className="grid-analyze">
+      <section className="card" style={{ gridColumn: mode === 'batch' ? 'span 2' : undefined }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h2 className="card-title" style={{ marginBottom: 0 }}><span className="material-symbols-outlined">description</span> {t('analyze')}</h2>
+            
+            <div style={{ background: 'var(--bg-surface-alt)', padding: '0.25rem', borderRadius: '2rem', display: 'flex' }}>
+                <button 
+                  className={`btn ${mode === 'single' ? 'btn-primary' : ''}`}
+                  style={{ padding: '0.4rem 1rem', fontSize: '0.85rem', borderRadius: '1.5rem', background: mode === 'single' ? 'var(--brand-primary)' : 'transparent', color: mode === 'single' ? '#fff' : 'var(--text-secondary)' }}
+                  onClick={() => setMode('single')}
+                >
+                    {t('singleCase')}
+                </button>
+                <button 
+                  className={`btn ${mode === 'batch' ? 'btn-primary' : ''}`}
+                  style={{ padding: '0.4rem 1rem', fontSize: '0.85rem', borderRadius: '1.5rem', background: mode === 'batch' ? 'var(--brand-primary)' : 'transparent', color: mode === 'batch' ? '#fff' : 'var(--text-secondary)' }}
+                  onClick={() => setMode('batch')}
+                >
+                    {t('batchMode')}
+                </button>
+            </div>
+        </div>
+
+        {mode === 'single' ? (
+            <>
+                <RichTextEditor
+                    value={text}
+                    onChange={setText}
+                    placeholder={t('casePlaceholder')}
+                />
+
+                <button className="btn btn-primary" style={{ width: '100%' }} disabled={isLoading || !text.trim()} onClick={onAnalyze}>
+                    {isLoading ? <span className="spinner"></span> : <><span className="material-symbols-outlined">bolt</span> {t('analyzeBtn')}</>}
+                </button>
+
+                {result && (
+                    <div style={{ marginTop: '2.5rem', borderTop: '2px solid var(--border-subtle)', paddingTop: '2rem' }}>
+                        <h2 className="card-title">{result.analysis.title}</h2>
+                        <AnalysisDetails analysis={result.analysis} globalLawStats={globalLawStats} t={t} />
+                    </div>
+                )}
+            </>
+        ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
+                {/* Input Side */}
+                <div>
+                     <input 
+                       className="input-field" 
+                       placeholder={t('caseTitleOptional')} 
+                       style={{ marginBottom: '1rem' }}
+                       value={batchTitle}
+                       onChange={(e) => setBatchTitle(e.target.value)}
+                       disabled={isBatchProcessing}
+                     />
+                     <RichTextEditor
+                        value={text}
+                        onChange={setText}
+                        placeholder={t('casePlaceholder')}
+                     />
+                     <button 
+                        className="btn btn-secondary" 
+                        style={{ width: '100%', marginTop: '1rem', border: '1px dashed var(--brand-primary)', color: 'var(--brand-primary)' }}
+                        disabled={!text.trim() || isBatchProcessing}
+                        onClick={addToQueue}
+                     >
+                        <span className="material-symbols-outlined">add</span> {t('addToQueue')}
+                     </button>
+                </div>
+
+                {/* Queue Side */}
+                <div style={{ background: 'var(--bg-surface-alt)', borderRadius: 'var(--radius-md)', padding: '1.5rem', display: 'flex', flexDirection: 'column' }}>
+                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                        <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>{t('queue')}</h3>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t('itemsInQueue')(queue.length)}</span>
+                     </div>
+                     
+                     <div style={{ flex: 1, minHeight: '300px', maxHeight: '500px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {queue.length === 0 ? (
+                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', color: 'var(--text-muted)', opacity: 0.6 }}>
+                                <span className="material-symbols-outlined" style={{ fontSize: '3rem' }}>queue</span>
+                                <p style={{ marginTop: '0.5rem' }}>{t('queueEmpty')}</p>
+                            </div>
+                        ) : (
+                            queue.map((item, idx) => (
+                                <div key={item.id} style={{ background: 'var(--bg-surface)', padding: '1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                    <div style={{ color: getStatusColor(item.status) }}>
+                                        {item.status === 'processing' ? <span className="spinner" style={{ width: '1.2rem', height: '1.2rem', borderTopColor: 'var(--brand-primary)', borderColor: 'var(--border-strong)' }}></span> : <span className="material-symbols-outlined">{getStatusIcon(item.status)}</span>}
+                                    </div>
+                                    <div style={{ flex: 1, overflow: 'hidden' }}>
+                                        <p style={{ fontWeight: 600, fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title}</p>
+                                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t(`status${item.status.charAt(0).toUpperCase() + item.status.slice(1)}`)}</p>
+                                    </div>
+                                    {item.status === 'pending' && (
+                                        <button className="btn btn-secondary" style={{ padding: '0.25rem' }} onClick={() => removeFromQueue(item.id)}>
+                                            <span className="material-symbols-outlined" style={{ fontSize: '1.2rem', color: 'var(--status-error)' }}>close</span>
+                                        </button>
+                                    )}
+                                    {item.status === 'completed' && (
+                                        <span className="material-symbols-outlined" style={{ color: 'var(--status-success)', fontSize: '1.2rem' }}>check</span>
+                                    )}
+                                </div>
+                            ))
+                        )}
+                     </div>
+
+                     <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem' }}>
+                         <button 
+                            className="btn btn-primary" 
+                            style={{ flex: 1 }}
+                            disabled={queue.length === 0 || isBatchProcessing || !queue.some(i => i.status === 'pending')}
+                            onClick={runBatch}
+                         >
+                            {isBatchProcessing ? <span className="spinner"></span> : <><span className="material-symbols-outlined">play_arrow</span> {t('analyzeQueue')}</>}
+                         </button>
+                         <button 
+                            className="btn btn-secondary"
+                            disabled={queue.length === 0 || isBatchProcessing}
+                            onClick={() => setQueue([])}
+                         >
+                            {t('clearQueue')}
+                         </button>
+                     </div>
+                </div>
+            </div>
+        )}
+      </section>
+      
+      {mode === 'single' && (
+        <section>
+          <div className="card" style={{ background: 'var(--brand-primary-soft)', border: 'none', marginBottom: '1.5rem' }}>
+            <h3 style={{ marginBottom: '0.5rem', color: 'var(--brand-primary)' }}>نصيحة قانونية ذكية</h3>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>قم بنسخ الحكم القضائي كاملاً لضمان دقة استخراج الوقائع والحيثيات. النظام يدعم الأحكام الصادرة من المحاكم التجارية والعامة والإدارية.</p>
+          </div>
+          <div className="card">
+            <h3 style={{ marginBottom: '1rem' }}>كيف يعمل المحلل؟</h3>
+            <ul style={{ paddingInlineStart: '1.25rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+              <li style={{ marginBottom: '0.5rem' }}>استخراج البيانات الهيكلية (الرقم، التاريخ، المحكمة).</li>
+              <li style={{ marginBottom: '0.5rem' }}>تحليل الأطراف المشاركة وأدوارهم القانونية.</li>
+              <li style={{ marginBottom: '0.5rem' }}>تتبع التاريخ الإجرائي للدعوى وجلساتها.</li>
+              <li style={{ marginBottom: '0.5rem' }}>تلخيص وقائع الدعوى بشكل منطقي باستخدام تنسيق غني.</li>
+              <li>استنباط الأسباب الشرعية والنظامية والقوانين المستشهد بها.</li>
+            </ul>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+};
+
+const HistorySection = ({ history, onDelete, onUpdate, onBulkDelete, globalLawStats, t, locale, lang }: any) => {
   const [selected, setSelected] = useState<any>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
   
   // Bulk Action State
   const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -450,38 +672,48 @@ const HistorySection = ({ history, onDelete, onUpdate, onBulkDelete, globalLawSt
     }
   };
 
-  const handleBulkExport = () => {
-     const items = isSelectionMode 
-         ? history.filter((h: any) => selectedIds.has(h.id))
-         : history;
-     
-     if (items.length === 0) return;
+  const handleBulkExport = async () => {
+     setIsProcessing(true);
+     await new Promise(resolve => setTimeout(resolve, 50)); // UI Refresh
+     try {
+         const items = isSelectionMode 
+             ? history.filter((h: any) => selectedIds.has(h.id))
+             : history;
+         
+         if (items.length === 0) return;
 
-     const dataStr = JSON.stringify(items, null, 2);
-     const blob = new Blob([dataStr], { type: "application/json" });
-     const url = URL.createObjectURL(blob);
-     const link = document.createElement("a");
-     link.href = url;
-     link.download = `judgment_analysis_export_${new Date().toISOString().slice(0,10)}.json`;
-     document.body.appendChild(link);
-     link.click();
-     document.body.removeChild(link);
-     
-     if (isSelectionMode) {
-         setIsSelectionMode(false);
-         setSelectedIds(new Set());
+         const dataStr = JSON.stringify(items, null, 2);
+         const blob = new Blob([dataStr], { type: "application/json" });
+         const url = URL.createObjectURL(blob);
+         const link = document.createElement("a");
+         link.href = url;
+         link.download = `judgment_analysis_export_${new Date().toISOString().slice(0,10)}.json`;
+         document.body.appendChild(link);
+         link.click();
+         document.body.removeChild(link);
+         
+         if (isSelectionMode) {
+             setIsSelectionMode(false);
+             setSelectedIds(new Set());
+         }
+     } finally {
+         setIsProcessing(false);
      }
   };
   
-  const handleBulkDeleteClick = () => {
+  const handleBulkDeleteClick = async () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
     
-    // UI logic: confirm here to prevent clearing selection if cancelled
     if (window.confirm(t('confirmBulkDelete'))) {
-        onBulkDelete(ids);
-        setIsSelectionMode(false);
-        setSelectedIds(new Set());
+        setIsProcessing(true);
+        try {
+            await onBulkDelete(ids);
+            setIsSelectionMode(false);
+            setSelectedIds(new Set());
+        } finally {
+            setIsProcessing(false);
+        }
     }
   };
 
@@ -530,19 +762,22 @@ const HistorySection = ({ history, onDelete, onUpdate, onBulkDelete, globalLawSt
   return (
     <div className="container">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <h2 style={{margin: 0}}>{t('history')}</h2>
+        <h2 style={{margin: 0}}>
+            {t('history')} 
+            {isProcessing && <span style={{ fontSize: '0.8rem', fontWeight: 'normal', marginInlineStart: '0.8rem', color: 'var(--text-muted)' }}>{t('processing')}</span>}
+        </h2>
         
         {history.length > 0 && (
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             {isSelectionMode ? (
               <>
-                <button className="btn btn-secondary" onClick={handleSelectAll}>
+                <button className="btn btn-secondary" onClick={handleSelectAll} disabled={isProcessing}>
                   {selectedIds.size === history.length ? t('deselectAll') : t('selectAll')}
                 </button>
                 <button 
                   className="btn btn-secondary" 
                   onClick={handleBulkDeleteClick}
-                  disabled={selectedIds.size === 0}
+                  disabled={selectedIds.size === 0 || isProcessing}
                   style={{ color: 'var(--status-error)' }}
                 >
                   <span className="material-symbols-outlined">delete</span> {t('deleteSelected')}
@@ -550,20 +785,20 @@ const HistorySection = ({ history, onDelete, onUpdate, onBulkDelete, globalLawSt
                 <button 
                   className="btn btn-secondary"
                   onClick={handleBulkExport}
-                  disabled={selectedIds.size === 0}
+                  disabled={selectedIds.size === 0 || isProcessing}
                 >
                   <span className="material-symbols-outlined">download</span> {t('exportSelected')}
                 </button>
-                <button className="btn btn-secondary" onClick={toggleSelectionMode}>
+                <button className="btn btn-secondary" onClick={toggleSelectionMode} disabled={isProcessing}>
                   {t('cancel')}
                 </button>
               </>
             ) : (
               <>
-                <button className="btn btn-secondary" onClick={toggleSelectionMode}>
+                <button className="btn btn-secondary" onClick={toggleSelectionMode} disabled={isProcessing}>
                   <span className="material-symbols-outlined">check_box</span> {t('select')}
                 </button>
-                <button className="btn btn-secondary" onClick={handleBulkExport}>
+                <button className="btn btn-secondary" onClick={handleBulkExport} disabled={isProcessing}>
                   <span className="material-symbols-outlined">download</span> {t('exportAll')}
                 </button>
               </>
@@ -588,10 +823,50 @@ const HistorySection = ({ history, onDelete, onUpdate, onBulkDelete, globalLawSt
                 style={{ 
                    cursor: 'pointer', 
                    border: isSelected ? '2px solid var(--brand-primary)' : '1px solid var(--border-subtle)',
-                   background: isSelected ? 'var(--brand-primary-soft)' : 'var(--bg-surface)'
+                   background: isSelected ? 'var(--brand-primary-soft)' : 'var(--bg-surface)',
+                   position: 'relative',
+                   transition: 'all 0.2s ease',
+                   transform: isSelected ? 'scale(1.005)' : 'none',
+                   boxShadow: isSelected ? 'var(--shadow-md)' : 'var(--shadow-sm)'
                 }}
                 onClick={() => isSelectionMode ? toggleSelectId(rec.id) : setSelected(rec)}
               >
+                {isSelected && (
+                    <div style={{
+                        position: 'absolute',
+                        top: '-10px',
+                        left: lang === 'ar' ? 'auto' : '-10px',
+                        right: lang === 'ar' ? '-10px' : 'auto',
+                        background: 'var(--brand-primary)',
+                        color: 'white',
+                        borderRadius: '50%',
+                        width: '24px',
+                        height: '24px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                        zIndex: 10
+                    }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>check</span>
+                    </div>
+                )}
+                
+                {isProcessing && isSelected && (
+                    <div style={{
+                        position: 'absolute',
+                        inset: 0,
+                        background: 'rgba(255,255,255,0.5)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 5,
+                        borderRadius: 'var(--radius-md)'
+                    }}>
+                        <div className="spinner" style={{ borderColor: 'var(--brand-primary)', borderTopColor: 'transparent', width: '2rem', height: '2rem' }}></div>
+                    </div>
+                )}
+
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
                   {isSelectionMode && (
                     <div style={{ paddingTop: '0.25rem' }}>
@@ -600,6 +875,7 @@ const HistorySection = ({ history, onDelete, onUpdate, onBulkDelete, globalLawSt
                           checked={isSelected} 
                           onChange={() => toggleSelectId(rec.id)}
                           style={{ width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
+                          disabled={isProcessing}
                         />
                     </div>
                   )}
@@ -627,205 +903,74 @@ const HistorySection = ({ history, onDelete, onUpdate, onBulkDelete, globalLawSt
   );
 };
 
-// Helper function to parse legacy judgment text
-const parseLegacyCase = (record: any) => {
-    let text = record.judgment_text || "";
-    // Clean HTML tags and entities
-    text = text.replace(/<br\s*\/?>/gi, '\n')
-               .replace(/&nbsp;/g, ' ')
-               .replace(/<[^>]+>/g, '')
-               // Normalize newlines and ensure unified spacing
-               .replace(/\r\n/g, '\n')
-               .replace(/\n{2,}/g, '\n');
-
-    if (!text.trim() && record.judgment_ruling) {
-        text = `نص الحكم:\n${record.judgment_ruling}`;
-    }
-
-    const findHeaderIndex = (text: string, patterns: RegExp[]) => {
-        let bestMatch = null;
-        for (const p of patterns) {
-            const match = text.match(p);
-            if (match && match.index !== undefined) {
-                 if (!bestMatch || match.index < bestMatch.index) {
-                     bestMatch = { index: match.index, length: match[0].length };
-                 }
-            }
-        }
-        return bestMatch;
-    };
-
-    const factsPatterns = [
-        /(?:^|\n)\s*(?:الوقائع|وقائع الدعوى|ملخص الوقائع|واقعات الدعوى|موجز الوقائع|بيان الدعوى|تتحصل وقائع هذه الدعوى|تتلخص وقائع هذه الدعوى)\s*[:\-\.]?/i
-    ];
-    const reasonsPatterns = [
-        /(?:^|\n)\s*(?:الأسباب|أسباب الحكم|تسبيب الحكم|الأسباب والحيثيات|حيثيات الحكم|الموضوع|بناء على ما تقدم|تأسيس الحكم|وعليه)\s*[:\-\.]?/i
-    ];
-    const rulingPatterns = [
-        /(?:^|\n)\s*(?:نص الحكم|منطوق الحكم|المنطوق|الحكم|حكمت الدائرة|منطوق|قررت الدائرة|وبه تقضي)\s*[:\-\.]?/i
-    ];
-
-    const factsMatch = findHeaderIndex(text, factsPatterns);
-    const reasonsMatch = findHeaderIndex(text, reasonsPatterns);
-    const rulingMatch = findHeaderIndex(text, rulingPatterns);
-
-    const sections = [
-        { type: 'facts', match: factsMatch },
-        { type: 'reasons', match: reasonsMatch },
-        { type: 'ruling', match: rulingMatch }
-    ].filter(s => s.match !== null).sort((a, b) => a.match!.index - b.match!.index);
-
-    const extractContent = (currentType: string) => {
-        const currentSection = sections.find(s => s.type === currentType);
-        if (!currentSection) {
-            if (currentType === 'facts' && sections.length > 0 && sections[0].type !== 'facts') {
-                 // Fallback can be implemented here if needed
-                 return "";
-            }
-            return "";
-        }
-
-        const start = currentSection.match!.index + currentSection.match!.length;
-        const currentIndex = sections.indexOf(currentSection);
-        const nextSection = sections[currentIndex + 1];
-        const end = nextSection ? nextSection.match!.index : text.length;
-        return text.substring(start, end).trim();
-    };
-
-    let factsText = extractContent('facts');
-    let reasonsText = extractContent('reasons');
-    let rulingText = extractContent('ruling');
-    
-    // Fallback: If no headers found at all, put everything in facts
-    if (sections.length === 0) {
-        factsText = text;
-    }
-
-    const parties = [];
-    const claimantMatch = text.match(/(?:^|\n)\s*(?:المدعي|المدعية|المتظلم|المدمي|صاحب الدعوى)\s*[:\-\.]([\s\S]*?)(?=(?:^|\n)\s*(?:المدعى عليه|المدعى عليها|الوقائع))/i);
-    if (claimantMatch) parties.push({ role: 'المدعي', name: claimantMatch[1].trim().split('\n')[0] });
-
-    const defendantMatch = text.match(/(?:^|\n)\s*(?:المدعى عليه|المدعى عليها|ضد|في مواجهة)\s*[:\-\.]([\s\S]*?)(?=(?:^|\n)\s*(?:الوقائع|أسباب))/i);
-    if (defendantMatch) parties.push({ role: 'المدعى عليه', name: defendantMatch[1].trim().split('\n')[0] });
-
-    return {
-      title: record.title,
-      judgmentNumber: record.judgment_number || "N/A",
-      courtName: record.judgment_court_name || "N/A",
-      parties: parties.length ? parties : [{ role: "أطراف", name: "غير محدد" }],
-      proceduralHistory: "", 
-      facts: factsText || (sections.length === 0 ? text : "لم يتم استخلاص الوقائع تلقائياً."),
-      reasons: reasonsText || "لا توجد أسباب مستخلصة.",
-      ruling: rulingText || record.judgment_ruling || "لا يوجد منطوق حكم مستخلص.",
-      lawsCited: [] 
-    };
-};
-
-const RepositoryDetailView = ({ selected, parsedAnalysis, globalLawStats, t, onUseCase, onBack }: any) => {
-  const [viewMode, setViewMode] = useState<'analysis' | 'original'>('analysis');
-
-  const displayOriginalText = useMemo(() => {
-    return (selected.judgment_text || selected.judgment_ruling || "")
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/<[^>]+>/g, '');
-  }, [selected]);
-
+const RepositoryDetailView = ({ record, onBack, onUseCase, t }: any) => {
+  const textContent = record.judgment_text ? record.judgment_text.replace(/<br \/>/g, '\n') : '';
+  
   return (
     <div className="container">
       <button className="btn btn-secondary" style={{ marginBottom: '1.5rem' }} onClick={onBack}>
         <span className="material-symbols-outlined">arrow_back</span> {t('back')}
       </button>
       <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-          <h2 style={{ color: 'var(--brand-primary)', margin: 0 }}>{selected.title}</h2>
-          <button 
-             className="btn btn-primary" 
-             onClick={() => onUseCase(displayOriginalText)}
-          >
-             <span className="material-symbols-outlined">auto_awesome</span> {t('analyzeThisCase')}
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
-           <button 
-             className={`btn ${viewMode === 'analysis' ? 'btn-primary' : 'btn-secondary'}`}
-             onClick={() => setViewMode('analysis')}
-             style={{ borderRadius: '2rem', padding: '0.5rem 1rem', fontSize: '0.9rem' }}
-           >
-              <span className="material-symbols-outlined">segment</span> {t('structuredView')}
-           </button>
-           <button 
-             className={`btn ${viewMode === 'original' ? 'btn-primary' : 'btn-secondary'}`}
-             onClick={() => setViewMode('original')}
-             style={{ borderRadius: '2rem', padding: '0.5rem 1rem', fontSize: '0.9rem' }}
-           >
-              <span className="material-symbols-outlined">description</span> {t('originalText')}
-           </button>
+        <div style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '1rem' }}>
+           <h2 className="card-title" style={{ marginBottom: '0.5rem' }}>{record.title || t('judgmentNo') + ' ' + record.judgment_number}</h2>
+           <div style={{ display: 'flex', gap: '1rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+              <span className="badge">{record.judgment_court_name}</span>
+              <span>{record.judgment_hijri_date}</span>
+           </div>
         </div>
         
-        {viewMode === 'analysis' ? (
-           <>
-              <div className="card" style={{ background: 'var(--brand-primary-soft)', border: 'none', marginBottom: '2rem' }}>
-                  <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                      <span className="material-symbols-outlined" style={{ verticalAlign: 'middle', fontSize: '1.2rem', marginInlineEnd: '0.5rem' }}>info</span>
-                      {t('repositoryNotice')}
-                  </p>
-              </div>
-              <AnalysisDetails analysis={parsedAnalysis} globalLawStats={globalLawStats} t={t} />
-           </>
-        ) : (
-           <div style={{ background: 'var(--bg-surface-alt)', padding: '1.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-              <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-ar)', fontSize: '1rem', lineHeight: '1.8', color: 'var(--text-primary)' }}>
-                {displayOriginalText}
-              </pre>
-           </div>
-        )}
+        <div style={{ background: 'var(--bg-surface-alt)', padding: '1.5rem', borderRadius: 'var(--radius-sm)', maxHeight: '60vh', overflowY: 'auto' }}>
+           <h3 style={{ fontSize: '1rem', marginBottom: '1rem' }}>{t('originalText')}</h3>
+           <p style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>{textContent}</p>
+        </div>
+        
+        <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end' }}>
+           <button className="btn btn-primary" onClick={() => onUseCase(textContent)}>
+              <span className="material-symbols-outlined">bolt</span> {t('analyzeThisCase')}
+           </button>
+        </div>
+        <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--brand-primary-soft)', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem' }}>
+           <span className="material-symbols-outlined" style={{ verticalAlign: 'middle', marginRight: '0.5rem', fontSize: '1.2rem' }}>info</span>
+           {t('repositoryNotice')}
+        </div>
       </div>
     </div>
   );
 };
 
 const RepositorySection = ({ records, globalLawStats, t, onUseCase }: any) => {
-  const [selected, setSelected] = useState<any>(null);
-  const parsedAnalysis = useMemo(() => selected ? parseLegacyCase(selected) : null, [selected]);
-  
-  if (selected && parsedAnalysis) return (
-    <RepositoryDetailView 
-      selected={selected}
-      parsedAnalysis={parsedAnalysis}
-      globalLawStats={globalLawStats}
-      t={t}
-      onUseCase={onUseCase}
-      onBack={() => setSelected(null)}
-    />
-  );
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedRecord = useMemo(() => records.find((r: any) => r.id === selectedId), [records, selectedId]);
+
+  if (selectedRecord) {
+     return <RepositoryDetailView record={selectedRecord} onBack={() => setSelectedId(null)} onUseCase={onUseCase} t={t} />;
+  }
 
   return (
-    <div className="grid-repository">
-      <aside className="card" style={{ height: 'fit-content' }}>
-        <h3 style={{ marginBottom: '1.5rem' }}>أدوات التصفية</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <input className="input-field" placeholder="بحث بالكلمات المفتاحية..." />
-          <select className="input-field">
-            <option>جميع المحاكم</option>
-            <option>المحكمة التجارية</option>
-            <option>المحكمة العامة</option>
-          </select>
-          <button className="btn btn-primary" style={{ marginTop: '0.5rem' }}>بحث</button>
-        </div>
-      </aside>
-      
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        {records.map((rec: any) => (
-          <div key={rec.case_id} className="card card-clickable" style={{ cursor: 'pointer' }} onClick={() => setSelected(rec)}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <h4 style={{ color: 'var(--brand-primary)' }}>{rec.title}</h4>
-              <span className="material-symbols-outlined" style={{ color: 'var(--text-muted)' }}>chevron_right</span>
-            </div>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>{rec.judgment_court_name} • {rec.judgment_hijri_date}</p>
-          </div>
-        ))}
+    <div className="container">
+      <h2 style={{ marginBottom: '2rem' }}>{t('repository')}</h2>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
+         {records.map((rec: any) => (
+           <div 
+             key={rec.id} 
+             className="card card-clickable" 
+             onClick={() => setSelectedId(rec.id)}
+             style={{ cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column' }}
+           >
+             <h3 style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>{rec.title || `${t('judgmentNo')} ${rec.judgment_number}`}</h3>
+             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+               <span>{rec.judgment_court_name}</span>
+               <span>{rec.judgment_hijri_date}</span>
+             </div>
+             <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden', flex: 1 }}>
+                {rec.judgment_text ? rec.judgment_text.replace(/<br \/>/g, ' ') : ''}
+             </p>
+             <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-subtle)', textAlign: 'end' }}>
+                <span style={{ fontSize: '0.85rem', color: 'var(--brand-primary)', fontWeight: '600' }}>{t('details')} &rarr;</span>
+             </div>
+           </div>
+         ))}
       </div>
     </div>
   );
@@ -865,11 +1010,8 @@ const App = () => {
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
-  const handleAnalyze = async () => {
-    if (!caseText.trim()) return;
-    setIsLoading(true);
-    setCurrentResult(null);
-    try {
+  // Core analysis logic refactored for reuse in single and batch modes
+  const processAnalysis = async (text: string, titleOverride?: string) => {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
       const prompt = `You are a Senior Saudi Legal Analyst. Analyze the provided Saudi legal judgment in its original Arabic.
       Extract detailed structured data following the requested schema.
@@ -888,7 +1030,7 @@ const App = () => {
       - Ensure the text is well-structured and easy to read.
       
       Legal Judgment Text (Formatted):
-      ${caseText}`;
+      ${text}`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -900,14 +1042,28 @@ const App = () => {
       });
       
       const analysis = JSON.parse(response.text);
-      const newRec = { originalText: caseText, analysis, timestamp: Date.now() };
+      if (titleOverride) {
+          analysis.title = titleOverride;
+      }
+      
+      const newRec = { originalText: text, analysis, timestamp: Date.now() };
       const id = await putCaseInDB(newRec);
       const savedRec = { ...newRec, id };
       setHistory(prev => [savedRec, ...prev]);
+      return savedRec;
+  };
+
+  const handleAnalyze = async () => {
+    if (!caseText.trim()) return;
+    setIsLoading(true);
+    setCurrentResult(null);
+    try {
+      const savedRec = await processAnalysis(caseText);
       setCurrentResult(savedRec);
       setCaseText('');
     } catch (e) {
       console.error(e);
+      // Ideally handle error UI here
     } finally {
       setIsLoading(false);
     }
@@ -919,7 +1075,6 @@ const App = () => {
   };
   
   const handleBulkDelete = async (ids: number[]) => {
-    // Confirmation is now handled in the UI (HistorySection) before calling this
     for (const id of ids) {
         await deleteCaseFromDB(id);
     }
@@ -954,6 +1109,7 @@ const App = () => {
             result={currentResult}
             globalLawStats={globalLawStats}
             t={t} 
+            processAnalysis={processAnalysis}
           />
         )}
         
@@ -966,6 +1122,7 @@ const App = () => {
             globalLawStats={globalLawStats} 
             t={t} 
             locale={dateLocale} 
+            lang={lang} 
           />
         )}
         
