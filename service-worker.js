@@ -83,11 +83,12 @@ self.onmessage = async (event) => {
             try {
                 const prompt = `You are a Senior Saudi Legal Analyst. Analyze the following legal case text in its original Arabic language from Saudi Arabia. 
                 Extract the specified information in JSON format.
-                Focus on:
-                1. Identifying all involved parties (names and roles).
-                2. Listing specific legal articles and statutes mentioned in the ruling (e.g. Article 16 of the Commercial Court Law).
-                3. Providing a chronological procedural history of the case hearings and filings.
-                4. Capturing the facts, reasons, and final ruling using Markdown formatting (**bold** for emphasis, bullet points for lists).
+                
+                CRITICAL INSTRUCTION FOR TEXT FIELDS ('facts', 'reasons', 'ruling', 'proceduralHistory'):
+                - You MUST use Markdown formatting to improve readability.
+                - Use **bold** for key details: Party names, Dates (e.g., 1445/02/20), Monetary amounts (e.g., 50,000 SAR), and Court names.
+                - Use bullet points (- ) for listing chronological events, arguments, or evidences.
+                - Ensure the text is well-structured and easy to read.
                 
                 Case text: \n\n${caseItem.text}`;
                 

@@ -79,6 +79,9 @@ const translations: any = {
     noHistory: "لا توجد تحليلات سابقة.",
     judgmentNo: "صك رقم",
     court: "المحكمة",
+    date: "تاريخ الحكم",
+    status: "حالة القضية",
+    appellantRespondent: "المستأنف والمستأنف ضده",
     back: "رجوع",
     export: "تصدير",
     delete: "حذف",
@@ -97,7 +100,7 @@ const translations: any = {
     confirmBulkDelete: "هل أنت متأكد من حذف السجلات المحددة؟ هذه العملية لا يمكن التراجع عنها.",
     selectedCount: (n: number) => `${n} محدد`,
     citationCount: "عدد مرات الاستشهاد",
-    analyzeThisCase: "تحليل هذه القضية بالذكاء الاصطناعي",
+    analyzeThisCase: "تحليل القضية واستخراج الوقائع",
     repositoryNotice: "هذه البيانات مستخرجة من السجلات العامة. للحصول على تحليل قانوني متعمق (مثل استخراج المواد النظامية وتلخيص دقيق)، استخدم زر التحليل بالذكاء الاصطناعي.",
     originalText: "النص الأصلي",
     structuredView: "التحليل المهيكل",
@@ -136,6 +139,9 @@ const translations: any = {
     noHistory: "No history found.",
     judgmentNo: "Judgment #",
     court: "Court",
+    date: "Decision Date",
+    status: "Case Status",
+    appellantRespondent: "Appellant & Respondent",
     back: "Back",
     export: "Export",
     delete: "Delete",
@@ -154,7 +160,7 @@ const translations: any = {
     confirmBulkDelete: "Are you sure you want to delete the selected records? This action cannot be undone.",
     selectedCount: (n: number) => `${n} selected`,
     citationCount: "Citation Count",
-    analyzeThisCase: "Analyze this case with AI",
+    analyzeThisCase: "Analyze Case & Extract Facts",
     repositoryNotice: "These data are from public records. For in-depth legal analysis (e.g. extracting statutes and precise summary), use the AI Analysis button.",
     originalText: "Original Text",
     structuredView: "Structured View",
@@ -183,6 +189,9 @@ const ANALYSIS_SCHEMA = {
     title: { type: Type.STRING, description: "Short descriptive title for the case" },
     judgmentNumber: { type: Type.STRING, description: "Official judgment number" },
     courtName: { type: Type.STRING, description: "Name of the court" },
+    courtDecisionDate: { type: Type.STRING, description: "Date of the judgment/decision" },
+    caseStatus: { type: Type.STRING, description: "Status of the ruling (e.g. Final, Appealable)" },
+    appellantRespondent: { type: Type.STRING, description: "Names of Appellant and Respondent if applicable" },
     parties: {
       type: Type.ARRAY,
       description: "List of parties and their roles (Claimant, Defendant, etc.)",
@@ -297,7 +306,12 @@ const MarkdownText = ({ text }: { text: string }) => {
       let content = line;
       content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
       if (line.trim().startsWith('* ') || line.trim().startsWith('- ')) {
-        return <li key={i} dangerouslySetInnerHTML={{ __html: content.substring(2) }} />;
+        return (
+            <div key={i} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                <span style={{ color: 'var(--brand-primary)' }}>•</span>
+                <span dangerouslySetInnerHTML={{ __html: content.substring(2) }} />
+            </div>
+        );
       }
       return <p key={i} dangerouslySetInnerHTML={{ __html: content }} />;
     });
@@ -342,7 +356,26 @@ const AnalysisDetails = ({ analysis, globalLawStats, t }: any) => (
         <h4 style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>{t('court')}</h4>
         <p style={{ fontWeight: '700' }}>{analysis.courtName}</p>
       </div>
+      {analysis.courtDecisionDate && (
+        <div className="card" style={{ background: 'var(--bg-surface-alt)', border: 'none' }}>
+            <h4 style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>{t('date')}</h4>
+            <p style={{ fontWeight: '700' }}>{analysis.courtDecisionDate}</p>
+        </div>
+      )}
+      {analysis.caseStatus && (
+        <div className="card" style={{ background: 'var(--bg-surface-alt)', border: 'none' }}>
+            <h4 style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>{t('status')}</h4>
+            <p style={{ fontWeight: '700' }}>{analysis.caseStatus}</p>
+        </div>
+      )}
     </div>
+
+    {analysis.appellantRespondent && (
+        <div className="card" style={{ background: 'var(--bg-surface-alt)', border: 'none' }}>
+             <h4 style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>{t('appellantRespondent')}</h4>
+             <p style={{ fontWeight: '700' }}>{analysis.appellantRespondent}</p>
+        </div>
+    )}
 
     <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
       <section>
@@ -911,28 +944,50 @@ const RepositoryDetailView = ({ record, onBack, onUseCase, t }: any) => {
       <button className="btn btn-secondary" style={{ marginBottom: '1.5rem' }} onClick={onBack}>
         <span className="material-symbols-outlined">arrow_back</span> {t('back')}
       </button>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+         <div className="card" style={{ background: 'var(--bg-surface-alt)', border: 'none' }}>
+            <h4 style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>{t('judgmentNo')}</h4>
+            <p style={{ fontWeight: '700' }}>{record.judgment_number || '-'}</p>
+         </div>
+         <div className="card" style={{ background: 'var(--bg-surface-alt)', border: 'none' }}>
+            <h4 style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>{t('court')}</h4>
+            <p style={{ fontWeight: '700' }}>{record.judgment_court_name || '-'}</p>
+         </div>
+         <div className="card" style={{ background: 'var(--bg-surface-alt)', border: 'none' }}>
+            <h4 style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>{t('date')}</h4>
+            <p style={{ fontWeight: '700' }}>{record.judgment_hijri_date || '-'}</p>
+         </div>
+      </div>
+
       <div className="card">
-        <div style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '1rem' }}>
-           <h2 className="card-title" style={{ marginBottom: '0.5rem' }}>{record.title || t('judgmentNo') + ' ' + record.judgment_number}</h2>
-           <div style={{ display: 'flex', gap: '1rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              <span className="badge">{record.judgment_court_name}</span>
-              <span>{record.judgment_hijri_date}</span>
-           </div>
-        </div>
-        
-        <div style={{ background: 'var(--bg-surface-alt)', padding: '1.5rem', borderRadius: 'var(--radius-sm)', maxHeight: '60vh', overflowY: 'auto' }}>
-           <h3 style={{ fontSize: '1rem', marginBottom: '1rem' }}>{t('originalText')}</h3>
-           <p style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>{textContent}</p>
-        </div>
-        
-        <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+           <h2 className="card-title" style={{ margin: 0 }}>{record.title || t('originalText')}</h2>
            <button className="btn btn-primary" onClick={() => onUseCase(textContent)}>
               <span className="material-symbols-outlined">bolt</span> {t('analyzeThisCase')}
            </button>
         </div>
-        <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--brand-primary-soft)', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem' }}>
-           <span className="material-symbols-outlined" style={{ verticalAlign: 'middle', marginRight: '0.5rem', fontSize: '1.2rem' }}>info</span>
-           {t('repositoryNotice')}
+        
+        <div style={{ 
+            background: 'var(--bg-surface-alt)', 
+            padding: '1.5rem', 
+            borderRadius: 'var(--radius-sm)', 
+            lineHeight: '1.8', 
+            whiteSpace: 'pre-wrap',
+            fontFamily: 'var(--font-ar)',
+            border: '1px solid var(--border-subtle)',
+            maxHeight: '70vh',
+            overflowY: 'auto'
+        }}>
+           {textContent}
+        </div>
+        
+        <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'var(--brand-primary-soft)', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', display: 'flex', gap: '0.5rem' }}>
+           <span className="material-symbols-outlined" style={{ color: 'var(--brand-primary)' }}>info</span>
+           <div>
+              <p style={{ fontWeight: '600', color: 'var(--brand-primary)', marginBottom: '0.25rem' }}>{t('legalAnalytics')}</p>
+              <p>{t('repositoryNotice')}</p>
+           </div>
         </div>
       </div>
     </div>
@@ -940,8 +995,14 @@ const RepositoryDetailView = ({ record, onBack, onUseCase, t }: any) => {
 };
 
 const RepositorySection = ({ records, globalLawStats, t, onUseCase }: any) => {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | number | null>(null);
   const selectedRecord = useMemo(() => records.find((r: any) => r.id === selectedId), [records, selectedId]);
+
+  const getSnippet = (text: string) => {
+    if (!text) return t('noContent');
+    const clean = text.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
+    return clean.length > 200 ? clean.substring(0, 200) + '...' : clean;
+  };
 
   if (selectedRecord) {
      return <RepositoryDetailView record={selectedRecord} onBack={() => setSelectedId(null)} onUseCase={onUseCase} t={t} />;
@@ -958,16 +1019,32 @@ const RepositorySection = ({ records, globalLawStats, t, onUseCase }: any) => {
              onClick={() => setSelectedId(rec.id)}
              style={{ cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column' }}
            >
-             <h3 style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>{rec.title || `${t('judgmentNo')} ${rec.judgment_number}`}</h3>
-             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
-               <span>{rec.judgment_court_name}</span>
-               <span>{rec.judgment_hijri_date}</span>
+             <div style={{ marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '0.75rem' }}>
+                   <span className="badge" style={{background: 'var(--brand-primary-soft)', color: 'var(--brand-primary)'}}>
+                      {rec.judgment_court_name || t('court')}
+                   </span>
+                   {rec.judgment_hijri_date && (
+                       <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem', whiteSpace: 'nowrap' }}>
+                          <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>calendar_today</span>
+                          {rec.judgment_hijri_date}
+                       </span>
+                   )}
+                </div>
+                <h3 style={{ fontSize: '1.1rem', lineHeight: '1.4', color: 'var(--text-primary)', fontWeight: '700', minHeight: '3rem', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {rec.title || `${t('judgmentNo')} ${rec.judgment_number}`}
+                </h3>
              </div>
-             <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden', flex: 1 }}>
-                {rec.judgment_text ? rec.judgment_text.replace(/<br \/>/g, ' ') : ''}
+             
+             <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.6', flex: 1, marginBottom: '1.5rem', display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                {getSnippet(rec.judgment_text)}
              </p>
-             <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-subtle)', textAlign: 'end' }}>
-                <span style={{ fontSize: '0.85rem', color: 'var(--brand-primary)', fontWeight: '600' }}>{t('details')} &rarr;</span>
+             
+             <div style={{ paddingTop: '1rem', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{rec.judgment_number ? `#${rec.judgment_number}` : ''}</span>
+                <span style={{ fontSize: '0.85rem', color: 'var(--brand-primary)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    {t('details')} <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>arrow_forward</span>
+                </span>
              </div>
            </div>
          ))}
@@ -1005,6 +1082,21 @@ const App = () => {
     return counts;
   }, [history]);
 
+  // Merge history cases with static judicial data for repository view
+  const repositoryRecords = useMemo(() => {
+    const historyRecords = history.map(h => ({
+        id: h.id,
+        title: h.analysis?.title,
+        judgment_number: h.analysis?.judgmentNumber,
+        judgment_court_name: h.analysis?.courtName,
+        judgment_hijri_date: h.analysis?.courtDecisionDate,
+        judgment_text: h.originalText,
+        case_id: `user-analyzed-${h.id}`
+    }));
+    // Newest user cases first, then static data
+    return [...historyRecords, ...judicialData];
+  }, [history]);
+
   const t = (key: string) => translations[lang][key] || key;
   const dateLocale = lang === 'ar' ? arLocale : enLocale;
 
@@ -1022,12 +1114,21 @@ const App = () => {
       - Do NOT use formats like 'Article [Num] of [Law]' or '[Law], Article [Num]'.
       - NORMALIZE all law names to their official standard Arabic titles.
       - EXCLUDE general references (e.g., "according to the system") if the specific law name is not provided.
+
+      EXTRACT ADDITIONAL METADATA:
+      - 'courtDecisionDate': Extract the date of the decision (Hijri preferred, or Gregorian).
+      - 'caseStatus': infer the status (e.g., Final/Executive, Preliminary, Under Appeal).
+      - 'appellantRespondent': Identify the Appellant and Respondent if it is an appellate judgment.
       
-      CRITICAL INSTRUCTION FOR TEXT FIELDS ('facts', 'reasons', 'ruling', 'proceduralHistory'):
-      - You MUST use Markdown formatting to improve readability.
-      - Use **bold** for important names, dates, amounts, and legal terms.
-      - Use bullet points (- ) for listing chronological events, arguments, or evidences.
-      - Ensure the text is well-structured and easy to read.
+      FORMATTING RULES FOR TEXT FIELDS ('facts', 'reasons', 'ruling', 'proceduralHistory'):
+      1. These fields MUST be valid Markdown.
+      2. Use **bold** for all:
+         - Party names (e.g., **Claimant X**)
+         - Dates (e.g., **1445/01/01**)
+         - Monetary amounts (e.g., **50,000 SAR**)
+         - Court names (e.g., **Commercial Court**)
+      3. Use bullet points (- ) for lists of events, arguments, or evidences.
+      4. Ensure the text is well-structured and easy to read.
       
       Legal Judgment Text (Formatted):
       ${text}`;
@@ -1128,7 +1229,7 @@ const App = () => {
         
         {activeTab === 'records' && (
           <RepositorySection 
-             records={judicialData} 
+             records={repositoryRecords} 
              globalLawStats={globalLawStats} 
              t={t} 
              onUseCase={handleUseCase}
