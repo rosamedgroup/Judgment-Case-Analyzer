@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -93,7 +92,7 @@ const translations: any = {
     singleCase: "تحليل مفرد",
     estimatedTime: "وقت تقديري",
     dragToReorder: "اسحب لإعادة الترتيب",
-    pause: "إيقاف",
+    pause: "إيقاف مؤقت",
     resume: "استئناف",
     stop: "إيقاف الكل",
     minutesShort: "د",
@@ -273,9 +272,11 @@ const AnalyzeView = ({ t, processAnalysis, globalLawStats, externalText, clearEx
   }, [queue, t]);
 
   useEffect(() => {
+    // Main Batch Processing Loop
     if (!isProcessing || isPaused) return;
 
     const runNext = async () => {
+      // Prevent multiple parallel executions if state updates lag
       const isAnyProcessing = queue.some(i => i.status === 'processing');
       if (isAnyProcessing) return;
 
@@ -283,12 +284,16 @@ const AnalyzeView = ({ t, processAnalysis, globalLawStats, externalText, clearEx
       if (nextIdx === -1) { setIsProcessing(false); return; }
 
       const item = queue[nextIdx];
+      
+      // Update status to processing
       setQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'processing' } : q));
       
       try {
         const res = await processAnalysis(item.text, item.title);
+        // Mark as completed
         setQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'completed', result: res } : q));
       } catch (e) {
+        // Mark as failed
         setQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'failed' } : q));
       }
     };
@@ -378,14 +383,35 @@ const AnalyzeView = ({ t, processAnalysis, globalLawStats, externalText, clearEx
           </div>
           <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
             {!isProcessing ? (
-               <button className="btn btn-primary" onClick={() => setIsProcessing(true)} disabled={!queue.some(i => i.status === 'pending')}>{t('analyzeQueue')}</button>
+               <button 
+                  className="btn btn-primary" 
+                  onClick={() => { setIsProcessing(true); setIsPaused(false); }} 
+                  disabled={!queue.some(i => i.status === 'pending')}
+               >
+                 <span className="material-symbols-outlined">play_arrow</span> {t('analyzeQueue')}
+               </button>
             ) : (
                <>
-                 <button className="btn btn-secondary" onClick={() => setIsPaused(!isPaused)}>{isPaused ? t('resume') : t('pause')}</button>
-                 <button className="btn btn-secondary" style={{color: 'var(--status-error)'}} onClick={() => setIsProcessing(false)}>{t('stop')}</button>
+                 <button className="btn btn-secondary" onClick={() => setIsPaused(!isPaused)}>
+                    <span className="material-symbols-outlined">{isPaused ? 'play_arrow' : 'pause'}</span>
+                    {isPaused ? t('resume') : t('pause')}
+                 </button>
+                 <button 
+                    className="btn btn-secondary" 
+                    style={{color: 'var(--status-error)'}} 
+                    onClick={() => { setIsProcessing(false); setIsPaused(false); }}
+                 >
+                    <span className="material-symbols-outlined">stop</span> {t('stop')}
+                 </button>
                </>
             )}
-            <button className="btn btn-secondary" onClick={() => { setQueue([]); setIsProcessing(false); setIsPaused(false); }} disabled={isProcessing && !isPaused}>{t('clearQueue')}</button>
+            <button 
+              className="btn btn-secondary" 
+              onClick={() => { setQueue([]); setIsProcessing(false); setIsPaused(false); }} 
+              disabled={isProcessing && !isPaused}
+            >
+              {t('clearQueue')}
+            </button>
           </div>
         </div>
       )}
@@ -627,9 +653,13 @@ const App = () => {
 
       <nav className="mobile-bottom-nav">
         {navItems.map(item => (
-          <button key={item.id} className={`mobile-nav-item ${activeTab === item.id ? 'active' : ''}`} onClick={() => { setActiveTab(item.id); setSelectedHistory(null); setSelectedRepositoryId(null); }}>
+          <button 
+            key={item.id} 
+            className={`mobile-nav-item ${activeTab === item.id ? 'active' : ''}`} 
+            onClick={() => { setActiveTab(item.id); setSelectedHistory(null); setSelectedRepositoryId(null); }}
+            aria-label={item.label}
+          >
             <span className="material-symbols-outlined">{item.icon}</span>
-            <span>{item.label}</span>
           </button>
         ))}
       </nav>
