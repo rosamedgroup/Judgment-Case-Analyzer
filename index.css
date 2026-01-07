@@ -404,16 +404,6 @@ html[dir="rtl"] body {
   }
 }
 
-@media (min-width: 769px) {
-  .mobile-bottom-nav { display: none; }
-  .mobile-only { display: none; }
-  .view-repository {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-    gap: 1.5rem;
-  }
-}
-
 /* Typography & Content Formatting */
 .legal-content p {
   margin-bottom: 1.25rem;
@@ -547,4 +537,169 @@ html[dir="rtl"] .material-symbols-outlined.flip-rtl {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
+}
+
+/* Law Tooltip */
+.law-badge-container {
+  position: relative;
+  display: inline-flex;
+}
+
+.law-tooltip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: normal;
+  width: max-content;
+  max-width: 280px;
+  text-align: center;
+  z-index: 1000;
+  border: 1px solid var(--border-subtle);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.law-badge-container:hover .law-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(-5px);
+}
+
+.law-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -6px;
+  border-width: 6px;
+  border-style: solid;
+  border-color: var(--bg-surface) transparent transparent transparent;
+}
+
+/* Ensure link badge hover effect */
+a.badge:hover {
+  text-decoration: none;
+  filter: brightness(0.95);
+}
+
+/* --- Enhanced Queue Item Styles --- */
+.queue-item-card {
+  transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.2s ease;
+  border-inline-start-width: 5px;
+  border-inline-start-style: solid;
+}
+
+.queue-item-pending {
+  border-inline-start-color: var(--text-muted);
+  background: var(--bg-surface);
+}
+
+.queue-item-processing {
+  border-inline-start-color: var(--brand-primary);
+  background: linear-gradient(to right, var(--brand-primary-soft), var(--bg-surface));
+  background-size: 200% 100%;
+  animation: shimmer 3s infinite linear;
+}
+
+.queue-item-completed {
+  border-inline-start-color: var(--status-success);
+  background: #f0fdf4; /* Green-50 */
+}
+html[data-theme='dark'] .queue-item-completed {
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.queue-item-failed {
+  border-inline-start-color: var(--status-error);
+  background: #fef2f2; /* Red-50 */
+}
+html[data-theme='dark'] .queue-item-failed {
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.queue-item-paused {
+  border-inline-start-color: var(--status-warning);
+  background: #fffbeb; /* Amber-50 */
+}
+html[data-theme='dark'] .queue-item-paused {
+  background: rgba(245, 158, 11, 0.08);
+}
+
+@keyframes shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* --- Enhanced Status Badges --- */
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  border: 1px solid transparent;
+}
+
+.status-completed { 
+  background: #dcfce7; 
+  color: #166534; 
+  border-color: #bbf7d0;
+}
+html[data-theme='dark'] .status-completed { 
+  background: rgba(16, 185, 129, 0.15); 
+  color: #34d399; 
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.status-failed { 
+  background: #fee2e2; 
+  color: #991b1b; 
+  border-color: #fecaca;
+}
+html[data-theme='dark'] .status-failed { 
+  background: rgba(239, 68, 68, 0.15); 
+  color: #f87171; 
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.status-processing { 
+  background: #dbeafe; 
+  color: #1e40af; 
+  border-color: #bfdbfe;
+}
+html[data-theme='dark'] .status-processing { 
+  background: rgba(59, 130, 246, 0.15); 
+  color: #60a5fa; 
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.status-paused { 
+  background: #fef3c7; 
+  color: #92400e; 
+  border-color: #fde68a;
+}
+html[data-theme='dark'] .status-paused { 
+  background: rgba(245, 158, 11, 0.15); 
+  color: #fbbf24; 
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.status-pending { 
+  background: var(--bg-surface-alt); 
+  color: var(--text-muted); 
+  border-color: var(--border-subtle); 
 }

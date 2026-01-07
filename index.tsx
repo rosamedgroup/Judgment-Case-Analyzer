@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -288,6 +287,44 @@ const RichTextEditor = ({ value, onChange, placeholder, t }: any) => {
 
 // --- View Modules ---
 
+// Legal Definitions for Tooltips
+const LAW_DEFINITIONS: Record<string, string> = {
+  "نظام المحاكم التجارية": "نظام يحدد اختصاصات المحاكم التجارية وإجراءات نظر الدعاوى التجارية في المملكة.",
+  "نظام المرافعات الشرعية": "النظام الأساسي للإجراءات القضائية أمام المحاكم الشرعية.",
+  "نظام التنفيذ": "نظام يعنى بتنفيذ الأحكام القضائية والسندات التنفيذية الجبرية.",
+  "نظام الإفلاس": "ينظم إجراءات الإفلاس الوقائية وإعادة التنظيم المالي والتصفية.",
+  "نظام الشركات": "القانون المنظم لتأسيس الشركات وإدارتها وانقضائها.",
+  "نظام العمل": "ينظم العلاقة بين أصحاب العمل والعمال وحقوقهم وواجباتهم.",
+  "نظام الإجراءات الجزائية": "يحدد إجراءات الضبط والتحقيق والمحاكمة في القضايا الجنائية.",
+  "نظام الإثبات": "ينظم قواعد وطرق الإثبات في المعاملات المدنية والتجارية."
+};
+
+const LawBadge: React.FC<{ law: string }> = ({ law }) => {
+  const definition = LAW_DEFINITIONS[law] || 
+    Object.entries(LAW_DEFINITIONS).find(([k]) => law.includes(k))?.[1];
+
+  return (
+    <div className="law-badge-container">
+      <a 
+        href={`https://www.google.com/search?q=${encodeURIComponent('نظام ' + law + ' السعودية')}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="badge badge-brand"
+        style={{ textDecoration: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}
+        title="Search for this law"
+      >
+        {law}
+        <span className="material-symbols-outlined flip-rtl" style={{ fontSize: '1em', marginInlineStart: '4px' }}>open_in_new</span>
+      </a>
+      {definition && (
+        <div className="law-tooltip">
+          {definition}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const AnalysisDetails = ({ analysis, t, format, lang }: any) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginTop: '1rem' }}>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
@@ -306,9 +343,9 @@ const AnalysisDetails = ({ analysis, t, format, lang }: any) => (
     {analysis.lawsCited && analysis.lawsCited.length > 0 && (
       <section>
         <h3 className="section-title">{t('lawsCited')}</h3>
-        <div style={{display: 'flex', flexWrap: 'wrap', gap: '0.5rem'}}>
+        <div style={{display: 'flex', flexWrap: 'wrap', gap: '0.75rem'}}>
           {analysis.lawsCited.map((law: string, idx: number) => (
-            <span key={idx} className="badge badge-brand">{law}</span>
+            <LawBadge key={idx} law={law} />
           ))}
         </div>
       </section>
@@ -412,41 +449,36 @@ const AnalyzeView = ({ t, processAnalysis, externalText, clearExternal, lang }: 
     if (item.status === 'completed') {
       return { 
         label: t('statusCompleted'), 
-        color: 'var(--status-success)', 
-        icon: 'check_circle', 
-        bg: 'rgba(16, 185, 129, 0.1)' 
+        className: 'status-completed',
+        icon: 'task_alt' 
       };
     }
     if (item.status === 'failed') {
       return { 
         label: t('statusFailed'), 
-        color: 'var(--status-error)', 
-        icon: 'error', 
-        bg: 'rgba(239, 68, 68, 0.1)' 
+        className: 'status-failed',
+        icon: 'report_problem'
       };
     }
     if (item.status === 'processing') {
       return { 
         label: t('statusProcessing'), 
-        color: 'var(--brand-primary)', 
-        icon: 'sync', 
-        bg: 'var(--brand-primary-soft)', 
+        className: 'status-processing',
+        icon: 'autorenew',
         spin: true 
       };
     }
     if (isPaused && item.status === 'pending' && isProcessing) {
       return { 
         label: t('statusPaused'), 
-        color: 'var(--status-warning)', 
-        icon: 'pause_circle', 
-        bg: 'rgba(245, 158, 11, 0.1)' 
+        className: 'status-paused',
+        icon: 'pause_circle'
       };
     }
     return { 
       label: t('statusPending'), 
-      color: 'var(--text-muted)', 
-      icon: 'schedule', 
-      bg: 'var(--bg-surface-alt)' 
+      className: 'status-pending',
+      icon: 'pending'
     };
   };
 
@@ -520,10 +552,12 @@ const AnalyzeView = ({ t, processAnalysis, externalText, clearExternal, lang }: 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '450px', overflowY: 'auto', paddingInlineEnd: '0.5rem' }}>
             {queue.map((item, idx) => {
               const statusInfo = getStatusDisplay(item);
+              const cardStatusClass = item.status === 'pending' && isPaused && isProcessing ? 'paused' : item.status;
+              
               return (
                 <div 
                   key={item.id} 
-                  className="card queue-item-card" 
+                  className={`card queue-item-card queue-item-${cardStatusClass}`} 
                   draggable={item.status === 'pending' && !isProcessing}
                   onDragStart={() => handleDragStart(idx)}
                   onDragEnter={() => handleDragEnter(idx)}
@@ -536,25 +570,13 @@ const AnalyzeView = ({ t, processAnalysis, externalText, clearExternal, lang }: 
                       gap: '1rem', 
                       cursor: (item.status === 'pending' && !isProcessing) ? 'move' : 'default',
                       opacity: item.status === 'pending' && isPaused && isProcessing ? 0.85 : 1,
-                      borderInlineStart: `4px solid ${statusInfo.color}`,
-                      background: item.status === 'processing' ? 'var(--brand-primary-soft)' : 'var(--bg-surface)'
                   }}
                 >
                    <span className="material-symbols-outlined drag-handle-icon" style={{color: 'var(--text-muted)', fontSize: '1.2rem'}}>drag_indicator</span>
-                   <div style={{flex: 1, minWidth: 0}}><strong style={{display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '1rem'}}>{item.title}</strong></div>
+                   <div style={{flex: 1, minWidth: 0}}><strong style={{display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '1rem', color: 'var(--text-primary)'}}>{item.title}</strong></div>
                    <div style={{display:'flex', alignItems:'center', gap: '0.75rem'}}>
-                      <div className="status-badge" style={{
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: '0.4rem', 
-                        padding: '0.35rem 0.75rem', 
-                        borderRadius: '2rem', 
-                        backgroundColor: statusInfo.bg, 
-                        color: statusInfo.color,
-                        fontSize: '0.8rem',
-                        fontWeight: '800'
-                      }}>
-                        <span className={`material-symbols-outlined ${statusInfo.spin ? 'rotating' : ''}`} style={{fontSize: '1.1rem'}}>
+                      <div className={`status-badge ${statusInfo.className}`}>
+                        <span className={`material-symbols-outlined ${statusInfo.spin ? 'rotating' : ''}`} style={{fontSize: '1.2rem'}}>
                           {statusInfo.icon}
                         </span>
                         <span>{statusInfo.label}</span>
